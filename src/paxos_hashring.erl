@@ -11,7 +11,6 @@
 start() ->
     [dike_master:add_group(VNode , arithmetic_paxos) || VNode <- generate_paxos_groups()].
 
-
 send(Entity, Req) ->
     Id = erlang:phash2(Entity) rem ?GROUP_COUNT,
     dike_dispatcher:request(list_to_atom("vnode-" ++ integer_to_list(Id+1)), Req).

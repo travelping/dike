@@ -13,7 +13,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, 
+-export([start_link/1,
 	 get_nodes/1,
 	 request/2,
 	 request/3,
@@ -28,9 +28,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
--define(DISPATCHER_TIMEOUT, 2000). 
+-define(DISPATCHER_TIMEOUT, 2000).
 
 -record(state, {routing_table,
 		rt_timestamp=0,
@@ -42,7 +42,7 @@
 %%%===================================================================
 start_link(Masters) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Masters], []).
-    
+
 check_remote_group(G, _M) ->
 %    Groups= get_nodes(G) -- [node()],
     gen_paxos:busy_ping(node(), G).
@@ -66,8 +66,7 @@ get_nodes(PGroup, final) ->
     case catch ets:lookup(dispatcher_table, PGroup) of
         [#routing_table_entry{group_name=PGroup, nodes=RVal}]  ->
             RVal;
-        E ->
-            %lager:debug([{class, dike}], "tried to get nodes for group ~p failing RetVal was ~p!~n", [PGroup, E]),
+        _E ->
             {error, not_found}
     end.
 
@@ -84,8 +83,7 @@ request(Node, PGroup, Val, I, N) ->
     case get_nodes(PGroup) of
 	Nodes when is_list(Nodes), length(Nodes) == 1 ->
 	    stub_paxos:append(hd(Nodes), PGroup, Val);
-        Nodes when is_list(Nodes) -> 
-						%	    %lager:debug([{class, dike}], "dike_dispatcher:request called, args=~p, group members: ~p~n", [{PGroup, Val}, Nodes]),
+        Nodes when is_list(Nodes) ->
             paxos_server:call(Nodes, PGroup, Val);
         {error, not_found} ->
 	    timer:sleep(timer:seconds(5)),
@@ -94,28 +92,26 @@ request(Node, PGroup, Val, I, N) ->
 
 
 request(PGroup, Val) ->
-    %    %lager:debug([{class, dike}], "dike_dispatcher:request called, args=~p~n", [{PGroup, Val}]),
     case get_nodes(PGroup) of
 	Nodes when is_list(Nodes), length(Nodes) == 1 ->
 	    stub_paxos:append(hd(Nodes), PGroup, Val);
-        Nodes when is_list(Nodes) -> 
-						%	    %lager:debug([{class, dike}], "dike_dispatcher:request called, args=~p, group members: ~p~n", [{PGroup, Val}, Nodes]),
+        Nodes when is_list(Nodes) ->
             paxos_server:call(Nodes, PGroup, Val);
         {error, not_found} ->
             throw({error, not_found})
     end.
 
 cast(PGroup, Val) ->
-    Nodes =  get_nodes(PGroup),   
+    Nodes =  get_nodes(PGroup),
     paxos_server:cast(Nodes, PGroup, Val).
 
 group_update(GName, NewMembers) ->
     catch gen_server:call(?MODULE, {group_update, GName, NewMembers}).
 
-new_group(Node, Gname, PaxosServerModule, Nodes) -> 
-    try 
+new_group(Node, Gname, PaxosServerModule, Nodes) ->
+    try
 	ok = gen_server:call({dike_dispatcher, Node}, {new_group, Gname, PaxosServerModule, Nodes})
-    catch 
+    catch
 	_Error:_Reason ->
 	    new_group(Node, Gname, PaxosServerModule, Nodes)
     end.
@@ -131,7 +127,7 @@ init([_Masters]) ->
     process_flag(trap_exit, true),
     RoutingTable=ets:new(dispatcher_table, [ordered_set, protected, named_table, {keypos, 2}, {read_concurrency, true}]),
     TRef = erlang:send_after(?DISPATCHER_TIMEOUT, ?MODULE, timeout),
-    {ok, #state{routing_table=RoutingTable, rt_timestamp=dike_lib:timestamp(), 
+    {ok, #state{routing_table=RoutingTable, rt_timestamp=dike_lib:timestamp(),
 		timer=TRef, local_groups=[]}}.
 
 handle_call(get_routing_table, _From, State=#state{routing_table=RT}) ->
@@ -145,14 +141,14 @@ handle_call({group_update, GName, NewMembers}, _From, State=#state{routing_table
 	      true ->
 		   LGS
 	   end,
-    case ets:lookup(RT, GName) of 
+    case ets:lookup(RT, GName) of
 	[RTE] ->
 	    ets:insert(RT, RTE#routing_table_entry{nodes=NewMembers, lastchange=dike_lib:timestamp()}),
 	    {reply, ok, State#state{local_groups=LGS2}};
-	[] -> 
+	[] ->
 	    {reply, ok, update_routing_table(State, true)}
     end;
-		 
+
 handle_call(refresh_routing_table, _From, State) ->
     S2 = update_routing_table(State, true),
     {reply, ok, S2};
@@ -160,7 +156,6 @@ handle_call(refresh_routing_table, _From, State) ->
 handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{routing_table=RoutingTable, local_groups=MyGroups}) ->
     S3=case ets:lookup(RoutingTable, Gname) of
 	   [#routing_table_entry{group_name=Gname}] ->
-	       %lager:debug([{class, dike}], "trying to add a group on node ~p that is already running in this dike!~n", [node()]),
 	       case {paxos_server:ping(node(), Gname, PaxosServerModule), gen_paxos:busy_ping(node(), Gname)} of
 		   {pang, pang} ->
 		       %%the dispatcher found the routingtable before being informed about starting this group....
@@ -171,16 +166,16 @@ handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{ro
 		       exit(whereis(paxos_server:generate_paxos_server_name(Gname, PaxosServerModule)), normal),
 		       gen_paxos:start_link_with_subscriber(Gname, PaxosServerModule, Nodes),
 		       State;
-		   _ -> 
+		   _ ->
 		       State
 	       end;
 	   [] ->
-						%lager:debug([{class, dike}], "adding group ~p to dike on ~p!~n", [Gname, node()]),
+               lager:debug([{class, dike}], "adding group ~p to dike on ~p!~n", [Gname, node()]),
 	       S2 = case dike_lib:position(Nodes, node()) of
 			not_found ->
 			    nothing_to_do_on_this_node,
 			    State;
-			_Pos -> 
+			_Pos ->
 			    gen_paxos:start_link_with_subscriber(Gname, PaxosServerModule, Nodes),
 			    State#state{local_groups=[Gname| MyGroups]}
 		    end,
@@ -191,8 +186,6 @@ handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{ro
        end,
     {reply, ok, S3};
 
-
-
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -200,16 +193,14 @@ handle_call(_Request, _From, State) ->
 handle_cast({join_group, Group, Module, Nodes, From, To}, State=#state{routing_table=RT, local_groups=MyGroups}) ->
     case dike_lib:position(MyGroups, Group) of
 	not_found ->
-	    %lager:debug([{class, dike}], "joining group ~p on ~p~n", [Group, node()]),
+            lager:debug([{class, dike}], "joining group ~p on ~p~n", [Group, node()]),
 	    Nodes2=dike_lib:replace(From, To, Nodes),
 	    gen_paxos:start_link_and_replace(Group, Module, Nodes2, From, From),
 	    ets:insert(RT, #routing_table_entry{nodes=Nodes2, module=Module, group_name=Group, lastchange=dike_lib:timestamp()}),
 	    {noreply, State#state{local_groups=[Group | MyGroups]}};
 	_Pos ->
-	    %lager:debug([{class, dike}], "refusing to join group ~p on ~p~n", [Group, node()]),
 	    {noreply, State}
     end;
-
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -222,7 +213,6 @@ handle_info(timeout, State=#state{timer=TRef}) ->
     {noreply, S2#state{timer=TRef2}};
 
 handle_info(_Info, State) ->
-    %lager:debug([{class, dike}], "got unhandled info in dispatcher on node ~p: ~p~n", [node(), _Info]),
     {noreply, State}.
 
 terminate(Reason, #state{local_groups=MyGroups}) ->
@@ -240,7 +230,7 @@ update_routing_table(State) ->
     update_routing_table(State, false).
 
 update_routing_table(State=#state{routing_table= RT, rt_timestamp=Timestamp}, Forced) ->
-    Now = dike_lib:timestamp(),    
+    Now = dike_lib:timestamp(),
     TabCount = get_table_entry_count(RT),
     if Now - ?MAX_RT_AGE > Timestamp ; Forced == true ; TabCount == 0 ->
 	    case  catch dike_master:get_routing_table() of
@@ -248,9 +238,8 @@ update_routing_table(State=#state{routing_table= RT, rt_timestamp=Timestamp}, Fo
 		    ets:delete_all_objects(RT),
 		    ets:insert(RT, V),
 		    State#state{rt_timestamp=dike_lib:timestamp(), local_groups=MyGroups};
-		_H -> 
-		    %lager:debug([{class, dike}], "received a bad return-val: ~p~n", [H]),
-		    State 
+		_H ->
+		    State
 	    end;
        true ->
 	    State
@@ -258,8 +247,7 @@ update_routing_table(State=#state{routing_table= RT, rt_timestamp=Timestamp}, Fo
 
 check_local_groups(State=#state{routing_table=RT, local_groups=MyGroups}) ->
 
-    [check_local_group(State, RTE) || [RTE] <- [ets:lookup(RT, G) || G <- MyGroups]],    
-						%    [%lager:debug([{class, dike}], "checking on node ~p for running group ~p~n", [node(), ets:lookup(RT, G)]) || G <- MyGroups],
+    [check_local_group(State, RTE) || [RTE] <- [ets:lookup(RT, G) || G <- MyGroups]],
     State.
 
 check_local_group(_State, RTE=#routing_table_entry{group_name=GName, nodes=Nodes}) ->
@@ -268,7 +256,7 @@ check_local_group(_State, RTE=#routing_table_entry{group_name=GName, nodes=Nodes
 	    just_got_stopped;
 	_V ->
 	    case gen_paxos:ping(node(), GName) of
-		pong -> 
+		pong ->
 		    ok;
 		pang ->
 		    Test2 = whereis(dike_lib:get_group_coordinator_name(GName)),

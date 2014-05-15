@@ -65,13 +65,10 @@ handle_call({'div', 0}, From, State)  ->
     {reply, fun() -> paxos_server:reply(From, State) end, State};
 
 handle_call(_Req, From, State) ->
-    %lager:debug([{class, dike}], "arithmetic_paxos received an unhandable request: ~p from ~p~n", [_Req, From]),
     {reply, fun() -> paxos_server:reply(From, ignored) end, State}.
 
 handle_cast(_, State) ->
     {noreply, State}.
-
-
 
 random_operation() ->
     random_operation(random:uniform(4)).

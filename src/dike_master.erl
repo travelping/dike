@@ -28,17 +28,12 @@
 		nodes=[],
 		master_nodes=[]}).
 
-
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% API
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link(Group) ->
-    %lager:debug([{class, dike}], "trying to start dike_master on ~p~n", [node()]),
     gen_paxos:start_link_with_subscriber(master, ?MODULE, Group).
-
 
 get_routing_table() ->
     Masters = dike_lib:masters(),
@@ -81,7 +76,7 @@ init(_Options) ->
     GT = ets:new(group_table, [ordered_set, private, {keypos, 2}]),
     MT = ets:new(machine_table, [bag, private, {keypos, 1}]),
     {ok, MasterNodes} = application:get_env(dike, masters),
-    %lager:debug([{class, dike}], "master starting on node ~p~n", [node()]),
+    lager:debug([{class, dike}], "master starting on node ~p~n", [node()]),
     {ok, #state{group_table=GT,
 		machine_table=MT,
 		groups=[],
@@ -99,15 +94,15 @@ export_state(State=#state{group_table=GT, machine_table=MT}) ->
     State#state{group_table=ets:tab2list(GT), machine_table=ets:tab2list(MT)}.
 
 handle_call({get_routing_table, Node}, From, State=#state{group_table=GT}) ->
-    RetVal = {get_groups_for_node(State, Node), ets:tab2list(GT)}, 
-    {reply, 
-     fun() -> 
-	     paxos_server:reply(From, RetVal) 
-     end, 
+    RetVal = {get_groups_for_node(State, Node), ets:tab2list(GT)},
+    {reply,
+     fun() ->
+	     paxos_server:reply(From, RetVal)
+     end,
      State};
 
 %handle_call({add_groups, GList}, From, State) when is_list(GList) ->
-    
+
 
 handle_call({add_group, Gname, PaxosServerModule}, From, State = #state{groups=Groups, group_table=GT}) ->
     case lists:member(Gname, Groups) of
@@ -118,7 +113,7 @@ handle_call({add_group, Gname, PaxosServerModule}, From, State = #state{groups=G
 	    add_group_int(State, Gname, PaxosServerModule),
 	    [RVal=#routing_table_entry{group_name=Gname, nodes=Nodes}] = ets:lookup(GT, Gname),
 	    RFun = fun() ->
-			   %lager:debug([{class, dike}], "added a group to dike master: ~p~n", [Gname]),
+                           lager:debug([{class, dike}], "added a group to dike master: ~p~n", [Gname]),
 			   [ok = dike_dispatcher:new_group(Node, Gname, PaxosServerModule, Nodes) || Node <- Nodes],
 			   paxos_server:reply(From, RVal)
 		   end,
@@ -131,13 +126,11 @@ handle_call({join, Node}, From, State = #state{nodes=Nodes}) ->
 	    {reply, fun() -> paxos_server:reply(From, already_known) end, State};
 	false ->
 	    Sideeffects = join_node(State, Node),
-	    {reply, 
-	     fun() ->			   
-		     %lager:debug([{class, dike}], "added a node to dike master: ~p~n", [Node]), 
+	    {reply,
+	     fun() ->
 		     paxos_server:reply(From, {[Node | Nodes]}),
 		     Sideeffects()
-		     %lager:debug([{class, dike}], "node ~p joined~n", [Node])
-	     end, 
+	     end,
 	     State#state{nodes=[Node | Nodes]}}
     end;
 
@@ -156,9 +149,8 @@ join_node(State=#state{nodes=Nodes}, Node) ->
 	    fun() -> nothing end;
 	{NodeWithMostGroups, GroupCnt, GroupMemberCnt} when GroupCnt >= GroupMemberCnt / length(Nodes) , GroupCnt > 1 ->
 	    Sideeffects = move_n_groups(State, NodeWithMostGroups, Node, trunc(GroupCnt +1 - GroupMemberCnt / length(Nodes))),
-	    fun() -> [H() || H <- Sideeffects] end;	
-	U ->
-	    %lager:debug([{class, dike}], "in join_node 3 ~p~n", [U]),
+	    fun() -> [H() || H <- Sideeffects] end;
+	_U ->
 	    fun() -> nothing end
     end.
 
@@ -186,7 +178,6 @@ move_participation(_State=#state{group_table=GT, machine_table=MT}, From, To, Gr
     [RTE=#routing_table_entry{group_name=Group, nodes=MemberList, module=Module}] = ets:lookup(GT, Group),
     ets:insert(GT, RTE#routing_table_entry{nodes=dike_lib:replace(From, To, MemberList)}),
     fun() ->
-	    %lager:debug([{class, dike}], "telling dike dispatcher on ~p to join group ~p~n", [To, Group]),		
 	    gen_server:cast({dike_dispatcher, To}, {join_group, Group, Module, MemberList, From, To})
 
     end. % this must be done in a sideeffect from the paxos_server.
@@ -229,6 +220,6 @@ find_node_with_least_groups(#state{nodes=Nodes, machine_table=MT}, GroupName) ->
 				      {nil, 1000000}, %% this number should be an upper bound for the groupcount on a node...
 				      Nodes),
     Node.
-    	
+
 get_groups_for_node(#state{machine_table=MT}, Node) ->
     [Group || {_, Group} <- ets:lookup(MT, Node)].

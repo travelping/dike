@@ -39,7 +39,7 @@ register(Key, Pid) ->
 
 unregister(Key) ->
     regine_server:unregister(?NAME, Key, undefined).
-    
+
 %% ------------------------------------------------------------------------------------------
 %% -- regine_server callbacks
 init({}) ->
@@ -47,7 +47,7 @@ init({}) ->
     {ok, Table}.
 
 handle_register(Pid, Key, _Args, Table) ->
-    case ets:lookup(Table, Key) of 
+    case ets:lookup(Table, Key) of
 	[] ->
 	    ets:insert(Table, {Key, Pid}),
 	    ok;
@@ -74,10 +74,9 @@ handle_pid_remove(Pid, Keys, Table) ->
                   end, Keys),
     Table.
 
-handle_death(_Pid, Reason, Table) when Reason==normal ; Reason==shutdown -> 
+handle_death(_Pid, Reason, Table) when Reason==normal ; Reason==shutdown ->
     Table;
-handle_death(_Pid, _Reason, Table) -> 
-    %lager:debug([{class, dike}], "paxos_fsm died on node ~p! ~p~n", [node(), [_Pid, _Reason, Table]]),
+handle_death(_Pid, _Reason, Table) ->
     Table.
 
 terminate(_Reason, _State) -> ok.

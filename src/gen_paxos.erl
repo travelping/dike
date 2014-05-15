@@ -16,7 +16,6 @@
 
 -behaviour(paxos_fsm).
 
-
 %% API
 
 -export([%start_link/2,
@@ -25,7 +24,7 @@
 	 start_link_and_replace/5,
 	 start_link_copy_state/4,
 	 start_link_with_subscriber/3,
-	 append_no_reply/3, 
+	 append_no_reply/3,
 	 append/4,
 	 newest_outcome/1,
 	 subscribe/1,
@@ -39,7 +38,6 @@
 	 busy_ping/2,
 	 request_issued_ping/3]).
 
-
 %% gen_server callbacks
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -49,14 +47,14 @@
 
 -export([send/3, broadcast/3, callback/2]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 -define(UNLOCK_TIMEOUT, timer:minutes(1)).
 
 -define(UPDATE_LC_TIMEOUT, timer:seconds(5)).
 
 -record(state, {group_name,
 		index=-1,
-		position, 
+		position,
 		others = [],
 		calls,
 		log,
@@ -70,21 +68,17 @@
 		members_persisted_at,
 		log_cut}).
 
-
-
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-
 restart_group_statefull(#routing_table_entry{group_name=GName, nodes=Nodes, module=Module}) ->
-    %lager:debug([{class, dike}], "restarting group ~p on node ~p~n", [GName, node()]),
     catch gen_paxos:stop(GName),
     catch paxos_server:stop({GName, Module}),
-    
+
     {_DBMod, _DBHandler} = init_db(GName),
     _FakeState = #state{group_name = GName},
-    
+
     %% case DBMod:get(DBHandler, persisted_at) of
     %% 	{error, undefined} ->
     %% 	    start_link(GName, Nodes, false, {DBMod, DBHandler}),
@@ -92,18 +86,16 @@ restart_group_statefull(#routing_table_entry{group_name=GName, nodes=Nodes, modu
     %% 	{ok, V} when is_integer(V) ->
     %% 	    {ok, ServerState} = DBMod:get(DBHandler, generate_subject(FakeState, {persisted_state, V})),
     %% 	    {ok, GenPaxosState} = DBMod:get(DBHandler, generate_subject(FakeState, {persisted_gen_paxos_state, V})),
-    %% 	    %lager:debug([{class, dike}], "found old states while starting: ~p ~p~n", [ServerState, GenPaxosState]),
     %% 	    start_link(GName, Nodes, false, {DBMod, DBHandler}),
     %% 	    paxos_server:start_link(GName, Module);
     %% 	A ->
-    %% 	    %lager:debug([{class, dike}], "bad db response while trying to get old states: ~p~n", [A])
+    %%      ok
     %% end,
-    
-    case find_node_with_state(Nodes, GName, Module) of 
+
+    case find_node_with_state(Nodes, GName, Module) of
 	error_empty ->
-	    %lager:debug([{class, dike}], "Restarting an instance without State, this is inconsistent if values have been decided!~n", []),
 	    start_link_with_subscriber(GName, Module, Nodes);
-	NodeWithState ->	    
+	NodeWithState ->
 	    start_link_copy_state(GName, Module, Nodes, NodeWithState)
     end.
 
@@ -123,9 +115,8 @@ start_link_with_subscriber(Group, Module, Nodes) ->
 	    start_link(Group, Nodes, {true, node()}, {DBMod, DBHandler}),
 	    paxos_server:start_link(Group, Module);
 	{ok, V} when is_integer(V) ->
-	    {ok, ServerState} = DBMod:get(DBHandler, generate_subject(FakeState, {persisted_state, V})),
-	    {ok, GenPaxosState} = DBMod:get(DBHandler, generate_subject(FakeState, {persisted_gen_paxos_state, V})),
-	    %lager:debug([{class, dike}], "found old states while starting: ~p ~p~n", [ServerState, GenPaxosState]),
+	    {ok, _ServerState} = DBMod:get(DBHandler, generate_subject(FakeState, {persisted_state, V})),
+	    {ok, _GenPaxosState} = DBMod:get(DBHandler, generate_subject(FakeState, {persisted_gen_paxos_state, V})),
 	    start_link(Group, Nodes, {true, node()}, {DBMod, DBHandler}),
 	    paxos_server:start_link(Group, Module);
 	A ->
@@ -145,9 +136,9 @@ start_link(PaxosGroupName, GroupMembers, Locked, {DBMod, DBHandler}) ->
 	not_found ->
 	    discarded;
 	_ ->
-	    gen_server:start_link({local, get_group_coordinator_name(PaxosGroupName)}, 
-				  ?MODULE, 
-				  [PaxosGroupName, GroupMembers, Locked, {DBMod, DBHandler}], 
+	    gen_server:start_link({local, get_group_coordinator_name(PaxosGroupName)},
+				  ?MODULE,
+				  [PaxosGroupName, GroupMembers, Locked, {DBMod, DBHandler}],
 				  [])
     end.
 
@@ -162,35 +153,30 @@ ping(Node, GName) ->
     end.
 
 request_issued_ping(Node, GName, Ref) ->
-    case catch gen_server:call({get_group_coordinator_name(GName), Node}, {request_issued_ping, Ref, self()}, ?PING_TIMEOUT) of 
+    case catch gen_server:call({get_group_coordinator_name(GName), Node}, {request_issued_ping, Ref, self()}, ?PING_TIMEOUT) of
 	{'EXIT', _Reason} ->
 	    pang;
 	pong ->
 	    pong;
 	_R ->
-	    %lager:debug([{class, dike}], "busy_ping failing because of ~p~n", [_R]),
 	    pang
     end.
 
 busy_ping(Node, GName) ->
     case catch gen_server:call({get_group_coordinator_name(GName), Node}, busy_ping, ?PING_TIMEOUT) of
 	{'EXIT', _Reason} ->
-	    %lager:debug([{class, dike}], "busy_ping failing because of ~p~n", [_Reason]),
 	    pang;
 	pong ->
 	    pong;
 	busy ->
-	    %lager:debug([{class, dike}], "busy_ping failing because of ~p~n", [busy]),
 	    pang;
 	_R ->
-	    %lager:debug([{class, dike}], "busy_ping failing because of ~p~n", [_R]),
 	    pang
     end.
- 
 
 set_and_unlock_log_complete(Node, GName, NLC) ->
     case catch gen_server:call({get_group_coordinator_name(GName), Node}, {set_and_unlock_log_complete, NLC}, ?UNLOCK_TIMEOUT) of
-	ok -> 
+	ok ->
 	    ok;
 	_ ->
 	    set_and_unlock_log_complete(Node, GName, NLC)
@@ -198,7 +184,7 @@ set_and_unlock_log_complete(Node, GName, NLC) ->
 
 unlock_log_complete_after_persisting(Node, GName, ExportedServerState) ->
     case catch gen_server:call({get_group_coordinator_name(GName), Node}, {unlock_log_complete_after_persisting, ExportedServerState}, ?UNLOCK_TIMEOUT) of
-	ok -> 
+	ok ->
 	    ok;
 	_ ->
 	    unlock_log_complete_after_persisting(Node, GName, ExportedServerState)
@@ -206,7 +192,7 @@ unlock_log_complete_after_persisting(Node, GName, ExportedServerState) ->
 
 unlock_log_complete(Node, GName) ->
     case catch gen_server:call({get_group_coordinator_name(GName), Node}, unlock_log_complete, ?UNLOCK_TIMEOUT) of
-	ok -> 
+	ok ->
 	    ok;
 	_ ->
 	    unlock_log_complete(Node, GName)
@@ -223,7 +209,6 @@ lock_log_complete(Node, GName) ->
     end.
 
 append(Node, GName, Ref, V) when is_reference(Ref) ->
-%    %lager:debug([{class, dike}], "trying to append  : ~p~n", [{Node, GName, V}]),
     case catch gen_server:call({get_group_coordinator_name(GName), Node}, {append, {Ref, self()}, V}, ?INTERCOMM_TIMEOUT) of
 	ok ->
 	    ok;
@@ -243,8 +228,7 @@ append(Node, GName, cast, V) ->
 	    busy
     end.
 
-append_no_reply([], GName, V) ->
-    %lager:debug([{class, dike}], "failed to append_no_reply {group, val} = ~p~n", [{GName, V}]),
+append_no_reply([], _GName, _V) ->
     error;
 
 append_no_reply(Nodes, GName, V) when is_list(Nodes) ->
@@ -258,11 +242,10 @@ newest_outcome(GName) ->
     gen_server:call(get_group_coordinator_name(GName), newest_outcome).
 
 subscribe(GName) ->
-    case catch gen_server:call(get_group_coordinator_name(GName), {subscribe, self()}, ?INTERCOMM_TIMEOUT) of 
-	ok -> 
+    case catch gen_server:call(get_group_coordinator_name(GName), {subscribe, self()}, ?INTERCOMM_TIMEOUT) of
+	ok ->
 	    ok;
-	ErrorReason -> 
-	    %lager:debug([{class, dike}], "failed to subscribe for ~p on node ~p for ~p~n", [GName, node(), ErrorReason]),
+	_ErrorReason ->
 	    subscribe(GName)
     end.
 
@@ -271,7 +254,7 @@ stop(GName) ->
 
 stop(Node, GName) ->
     gen_server:call({get_group_coordinator_name(GName), Node}, stop, ?INTERCOMM_TIMEOUT).
-  
+
 %%%===================================================================
 %%% paxos_coordinator callbacks
 %%%===================================================================
@@ -294,34 +277,17 @@ callback({P, _Log}, Msg = {round_decided, {{_Grp, _Idx}, _N, _V}}) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
 init([GroupName, GroupMembers, Locked, {DBMod, DBHandler}]) ->
     Position = dike_lib:position(GroupMembers, node()),
     OtherGroupMembers = GroupMembers -- [node()],
     Calls = ets:new(calls, [ordered_set, private, {keypos, 1}]),
     PaxosLog = ets:new(paxos_log, [ordered_set, public, {keypos, 1}]),
-    
+
     {A, B, C} = now(), %% there may be better ways to initialize the random seed
     random:seed({A*Position, B+Position, C*Position}),
 
-    IsLocked = log_complete_locked_p(Locked),
+    _IsLocked = log_complete_locked_p(Locked),
 
-    %if IsLocked ->
-	    %lager:debug([{class, dike}], "started gen_paxos in locked-mode for group ~p on node ~p~n~n", [GroupName, node()]);
-    %   true ->
-	    %lager:debug([{class, dike}], "started gen_paxos for group ~p on node ~p~n~n", [GroupName, node()])
-    %end,
-    
     {ok, #state{group_name=GroupName,
 		position=Position,
 		others=OtherGroupMembers,
@@ -335,14 +301,13 @@ init([GroupName, GroupMembers, Locked, {DBMod, DBHandler}]) ->
 		members_persisted_at=lists:duplicate(5,0),
 		log_cut=0}}.
 
-handle_call({request_issued_ping, Ref, Pid}, _From, State=#state{group_name=GroupName, db_adapter={DBMod, DBProc}, calls = Calls, log_complete=LC, log_complete_locked=LCL}) ->
+handle_call({request_issued_ping, Ref, Pid}, _From, State=#state{group_name=GroupName, db_adapter={DBMod, DBProc}, calls = Calls}) ->
     case ets:match_object(Calls, {'_', {{Ref, Pid}, '_'}}) of
 	[] ->
 	    lager:info("request issued ping failing on instance: ~p, no call-entry found!", [{node(), GroupName} ]),
 	    {reply, pang, State, ?UPDATE_LC_TIMEOUT};
-	[{Idx, {{Ref, Pid}, _Req}} = Entry] ->
-	    DecidedVal = DBMod:get(DBProc, generate_subject(State, Idx)),
-	    %lager:info([{class, dike}], "in request_issued_ping: ~p, Calls entry: ~p, val in log ~p, IncLC val in log: ~p~n", [{LC, LCL}, Entry, DecidedVal, DBMod:get(DBProc, generate_subject(State, LC + 1))]),
+	[{Idx, {{Ref, Pid}, _Req}} = _Entry] ->
+	    _DecidedVal = DBMod:get(DBProc, generate_subject(State, Idx)),
 	    {reply, pong, State, ?UPDATE_LC_TIMEOUT};
 	List when is_list(List) ->
 	    lager:info([{class, dike}], "Error! in request_issued_ping found to many entries! ~p~n", [List]),
@@ -353,7 +318,6 @@ handle_call(ping, _, State) ->
     {reply, pong, State, ?UPDATE_LC_TIMEOUT};
 
 handle_call(busy_ping, _From, State=#state{log_complete_locked=LCL}) when LCL == false ->
-    %%    %lager:debug([{class, dike}], "in busy ping on ~p log_complete=~p, calls: ~p~n", [{node(), Group}, LC, ets:tab2list(Calls)]),
     {reply, pong, State, ?UPDATE_LC_TIMEOUT};
 
 handle_call(busy_ping, _From, State=#state{log_complete_locked=_LCL}) ->
@@ -365,7 +329,6 @@ handle_call(stop, _From, State=#state{subscriber=Sub, group_name=GName}) ->
     {stop, normal, ok, State};
 
 handle_call({set_and_unlock_log_complete, NLC}, From, State=#state{index=I, subscriber=Sub}) when Sub /= nil ->
-    %lager:debug([{class, dike}], "unlocking log_complete after starting on node ~p, new_log_complete=~p~n", [node(), NLC]),    
     gen_server:reply(From, ok),
     NewState = update_log_complete(State#state{log_complete_locked=false, log_complete=NLC, index=max(NLC, I)}),
     parse_update_log_complete_resp(State, NewState, {noreply});
@@ -376,30 +339,28 @@ handle_call({unlock_log_complete_after_persisting, ExportedServerState}, From, S
     DBMod:update(DBProc, generate_subject(State, {persisted_state, LC}), ExportedServerState),
     DBMod:update(DBProc, generate_subject(State, {persisted_gen_paxos_state, LC}), State),
     DBMod:update(DBProc, generate_subject(State, persisted_at), LC),
-    
-    DBMod:bulk_delete(DBProc, [generate_subject(State, {persisted_state, PSP}), 
+
+    DBMod:bulk_delete(DBProc, [generate_subject(State, {persisted_state, PSP}),
 			       generate_subject(State, {persisted_gen_paxos_state, PSP})]),
-    
+
     start_instance(State, I+1, {self(), {?SERVER_PERSISTED_TAG, node(), LC}}, active),
     ets:insert(Calls, {I + 1, {self(), {?SERVER_PERSISTED_TAG, node(), LC}}}),
-    
-    %lager:debug([{class, dike}], "unlocking log_complete after persisting on node ~p, log_complete=~p~n", [node(), LC]),
+
     NewState = update_log_complete(State#state{log_complete_locked=false, paxos_server_persisted=LC}),
     parse_update_log_complete_resp(State, NewState, {noreply});
 
 handle_call(unlock_log_complete, From, State=#state{subscriber=Sub}) when Sub /= nil ->
-    %lager:debug([{class, dike}], "simply unlocking log_complete on node ~p~n", [node()]),
     gen_server:reply(From, ok),
     NewState = update_log_complete(State#state{log_complete_locked=false}),
     parse_update_log_complete_resp(State, NewState, {noreply});
 
-handle_call({lock_log_complete, NodeLocking}, From, State=#state{log_complete_locked={setting_up, _, NodeLocking}}) ->    
+handle_call({lock_log_complete, NodeLocking}, From, State=#state{log_complete_locked={setting_up, _, NodeLocking}}) ->
     {noreply, State#state{log_complete_locked={setting_up, From, NodeLocking}}, ?UPDATE_LC_TIMEOUT};
 
-handle_call({lock_log_complete, NodeLocking}, _From, State=#state{log_complete_locked={true, NodeLocking}}) ->    
+handle_call({lock_log_complete, NodeLocking}, _From, State=#state{log_complete_locked={true, NodeLocking}}) ->
     {reply, ok, State};
 
-handle_call({lock_log_complete, NodeLocking}, From, State=#state{log_complete_locked=LCL}) when LCL == false ->    
+handle_call({lock_log_complete, NodeLocking}, From, State=#state{log_complete_locked=LCL}) when LCL == false ->
     case log_complete_lockable(State) of
 	true ->
 	    {reply, ok, State#state{log_complete_locked={true, NodeLocking}}, ?UPDATE_LC_TIMEOUT};
@@ -422,7 +383,6 @@ handle_call({subscribe, PID}, _From, State=#state{subscriber=nil})  ->
     {reply, ok, State#state{subscriber=PID}, ?UPDATE_LC_TIMEOUT};
 
 handle_call({round_decided, {{_Grp, Idx}, _N, _V}} , _From, State = #state{index=I, subscriber=Sub, group_name=_GName, paxos_server_persisted=PSP, log_complete=LC, log_complete_locked=LCL, new_persistence_variance=Variance}) when Idx =< I ->
-%    %lager:debug([{class, dike}], "round decided on ~p Value: ~p", [{node(), GName}, _V]),
     Lockable = log_complete_lockable(State),
     CompLCL = log_complete_locked_p(LCL),
 
@@ -436,10 +396,8 @@ handle_call({round_decided, {{_Grp, Idx}, _N, _V}} , _From, State = #state{index
        end,
     parse_update_log_complete_resp(State, S2, {reply, ok});
 
-handle_call(Request, _From, State) ->
-    %lager:debug([{class, dike}], "unhandled request in gen_paxos:handle_call on ~p req: ~p~nState: ~p~n", [node(), Request, State]),
+handle_call(_Request, _From, State) ->
     {reply, ok, State, ?UPDATE_LC_TIMEOUT}.
-
 
 handle_cast({relay, {_, {S, _N, _V, From}} = Msg}, State=#state{group_members=Nodes}) ->
     case dike_lib:position(Nodes, From) of
@@ -471,8 +429,7 @@ handle_info(_Info, State) ->
     lager:info([{class, dike}], "in gen_paxos, handle_info called: ~p~n", [[_Info, State]]),
     {noreply, State, ?UPDATE_LC_TIMEOUT}.
 
-terminate(_Reason, State=#state{db_adapter={DBMod, DBProc}}) ->
-    %lager:debug([{class, dike}], "gen_paxos terminating on node ~p, ~p~n", [node(), [_Reason, State]]),
+terminate(_Reason, _State=#state{db_adapter={DBMod, DBProc}}) ->
     case application:get_env(dike, db_mode) of
 	{ok, per_group} ->
 	    DBMod:stop(DBProc),
@@ -492,14 +449,13 @@ code_change(_OldVsn, State, _Extra) ->
 get_group_coordinator_name(GroupName) ->
     dike_lib:get_group_coordinator_name(GroupName).
 
-
 start_instance(State, Idx, V) ->
     start_instance(State, Idx, V, passive).
 
 start_instance(State=#state{others=O, position=P, log=L, db_adapter=DBAdapter}, Idx, V, Mode) ->
     S = generate_subject(State,Idx),
     case lookup_instance(S) of
-	not_found -> 
+	not_found ->
 	    {ok, Pid} = paxos_fsm:start(S, P, V, O, [{self(), L}], ?MODULE, DBAdapter, Mode),
 	    paxos_registry:register(S,Pid),
 	    {ok, Pid};
@@ -525,9 +481,6 @@ gname_from_subject({_Node, GName, _Idx}) ->
 gname_from_subject({GName, _Idx}) ->
     GName.
 
-
-
-
 %%% answer with decide to requests that are in the decided part of the log
 
 relay(S, Idx, {CMD, {_,_,_,From}}, State=#state{log_complete=LC, db_adapter={DBMod, DBProc}, group_name=_GName}) when Idx =< LC ->
@@ -536,9 +489,9 @@ relay(S, Idx, {CMD, {_,_,_,From}}, State=#state{log_complete=LC, db_adapter={DBM
 	    {noreply, State, ?UPDATE_LC_TIMEOUT};
 	_ ->
 	    case DBMod:get(DBProc, S) of
-		{error, undefined} -> 
+		{error, undefined} ->
 		    lager:debug([{class, dike}], "trying to answer with decide to an older round (< LC), found no Value!!~n",[]);
-		{ok, {decided, LN, Val}} -> 
+		{ok, {decided, LN, Val}} ->
 		    send(From, S, {decide, {S, LN, Val, node()}});
 		{ok, {_PN, _N, _V}} ->
 		    lager:debug([{class, dike}], "trying to answer with decide to an older round (< LC), found no Value!!~n",[])
@@ -550,15 +503,15 @@ relay(S, Idx, {CMD, {_,_,_,From}}, State=#state{log_complete=LC, db_adapter={DBM
 
 relay(S, Idx, {MType, {S,_,_, From}} = Msg, State = #state{index=I, log_complete=LC, db_adapter={DBMod, DBProc}, group_name=_GName}) when I >= Idx , Idx > LC->
     case DBMod:get(DBProc, generate_subject(State, Idx)) of
-	{ok, {decided, LN, Val}} -> 
-	    case MType of 
+	{ok, {decided, LN, Val}} ->
+	    case MType of
 		decide ->
 		    nil;
 		_ ->
 		    send(From, S, {decide, {S,LN, Val,node()}})
 	    end,
 	    {noreply, State, ?UPDATE_LC_TIMEOUT};
-	{error, undefined} -> 
+	{error, undefined} ->
 	    do_relay(S, Idx, Msg, State);
 	{ok, {_PN, _N, _V}} ->
 	    do_relay(S, Idx, Msg, State)
@@ -567,14 +520,11 @@ relay(S, Idx, {MType, {S,_,_, From}} = Msg, State = #state{index=I, log_complete
 relay(S, Idx, {_, {_,_,_, _}} = Msg, State = #state{index=I, log_complete=LC}) when I < Idx , LC < Idx ->
     do_relay(S, Idx, Msg, State);
 
-relay(S, _Idx, M, State) ->
-    %lager:debug([{class, dike}], "received an unhandled relay-message: ~p~n", [[S, M, State]]),
+relay(_S, _Idx, _M, State) ->
     {noreply, State, ?UPDATE_LC_TIMEOUT}.
 
-
-
 do_relay(S, Idx, {Cmd, {S, _N, V, _From}} = Msg, State = #state{index=I}) ->
-    Pid = case lookup_instance(S) of 
+    Pid = case lookup_instance(S) of
 	      not_found ->
 		  case Cmd of
 		      A when A == prepare ; A == propose ; A == decide ->
@@ -596,8 +546,7 @@ lookup_instance(Subj) ->
 	    PID;
 	[] ->
 	    not_found;
-	[H|T] ->
-	    %lager:debug([{class, dike}], "looked up a paxos_fsm instance on node ~p and got  ~p~n", [node(), [H|T]]),
+	[H|_T] ->
 	    H
     end.
 
@@ -610,19 +559,18 @@ update_subscriber(Sub, Msg) ->
 	    update_subscriber(Sub, Msg)
     end.
 
-
 %% updates log_complete which is the index of the log where we have no holes underneath so the action can be passed to the subscribers.
 %% these updates can be blocked (mainly to transfer the subscribers state somewhere else) which may happen in cooperation with this f-n.
 %% after unlocking this f-n updates the subscribers state to the actual hole-free point automatically (therefor the handle_calls timeout is used).
 
-update_log_complete(State=#state{log_complete=LC, 
-				 index=I, 
-				 calls=Calls, 
+update_log_complete(State=#state{log_complete=LC,
+				 index=I,
+				 calls=Calls,
 				 db_adapter={DBMod, DBProc}
 				}) when LC < I ->
     IncLC = LC + 1,
     DecidedVal = DBMod:get(DBProc, generate_subject(State, IncLC)),
-    
+
     case ets:lookup(Calls, IncLC) of
 	[{IncLC, {From, StoredVal}}] ->
 	    update_log_complete_request_issued(State, node(), IncLC, {From, StoredVal}, DecidedVal);
@@ -633,16 +581,13 @@ update_log_complete(State=#state{log_complete=LC,
 update_log_complete(State=#state{}) ->
     State.
 
-
-
 update_log_complete_request_issued(State=#state{calls=Calls,
-						group_name=GName}, 
+						group_name=_GName},
 				   _Me,
-				   IncLC, 
+				   IncLC,
 				   {From, StoredVal},
 				   {ok, {decided, _N, {From, {?SERVER_PERSISTED_TAG, Any, RemotePersistedIdx} = StoredVal}}}) ->
     ets:delete(Calls, IncLC),
-    %lager:debug([{class, dike}], "i (~p, ~p) persisted index ~p, got through at ~p~n", [node(), GName, RemotePersistedIdx, IncLC]),
     S2 = State#state{log_complete=IncLC},
     update_log_complete(update_and_cut_log(S2, Any, RemotePersistedIdx));
 
@@ -652,7 +597,7 @@ update_log_complete_request_issued(State=#state{index=I},
 				   {From, StoredVal},
 				   {ok, {decided, _N, {_Other, {?SERVER_PERSISTED_TAG, Any, RemotePersistedIdx}}}}) ->
     reissue_request(State, From, StoredVal),
-    S2 = State#state{log_complete=IncLC, index=I+1},				 
+    S2 = State#state{log_complete=IncLC, index=I+1},
     update_log_complete(update_and_cut_log(S2, Any, RemotePersistedIdx));
 
 
@@ -683,7 +628,6 @@ update_log_complete_request_issued(State=#state{index=I,
 				   {From, StoredVal},
 				   {ok, {decided, _N, {Other, {?CHANGE_MEMBER_TAG, Old, New, NewsLC} = Val}}}) when Old=/=Me ->
     if NewsLC >= PSP ->
-	    %lager:debug([{class, dike}], "on node ~p, ~p got replaced by node ~p -> 2~n", [node(), Old, New]),
 	    NewMembers=dike_lib:replace(Old, New, Nodes),
 	    Others= NewMembers -- [node()],
 	    Pos=dike_lib:position(NewMembers, node()),
@@ -715,7 +659,6 @@ update_log_complete_request_issued(State=#state{log_complete_locked=LCL,
 				   IncLC,
 				   {From, StoredVal},
 				   {ok, {decided, _N, {From, StoredVal}}}) ->
-    %%	    %lager:debug([{class, dike}], "~p <- ~p finished round ~p with value ~p in paxos round ~p from ~p~n", [GName, node(), IncLC, StoredVal, N, From]),
     ets:delete(Calls, IncLC),
     update_subscriber(Sub, {paxos_update, From, IncLC, StoredVal, leader}),
     S2 = State#state{log_complete=IncLC},
@@ -731,12 +674,11 @@ update_log_complete_request_issued(State=#state{log_complete_locked=LCL,
 		    update_log_complete(S2)
 	    end;
 	{true, _} ->
-	    %lager:debug([{class, dike}], "Error! in update_log_complete, i should be blocked but seem to have issued a request o.0~n", []),
 	    update_log_complete(S2)
     end;
 
 
-update_log_complete_request_issued(State=#state{index=I, 
+update_log_complete_request_issued(State=#state{index=I,
 						subscriber=Sub},
 				   _Me,
 				   IncLC,
@@ -762,7 +704,6 @@ update_log_complete_request_issued(State=#state{index=I},
 				   {error, undefined}) when IncLC < I ->
     case lookup_instance(generate_subject(State, IncLC)) of
 	not_found ->
-	    %lager:debug([{class, dike}], "Error! paxos instance not started locally although it should be~n", []),
 	    {ok, _PID} = start_instance(State, IncLC, {From, StoredVal}, active);
 	_ ->
 	    nothing
@@ -784,14 +725,13 @@ update_log_complete_request_issued(State=#state{},
 				   {ok, {PN, N, _V}}) when is_integer(PN), is_integer(N) ->
     %% this round has not finished yet, entry is from the running paxos instance
     State;
-				       
+
 
 update_log_complete_request_issued(State=#state{},
 				   _Me,
 				   _IncLC,
 				   {_From, _StoredVal},
-				   {ok, {PN, N, V}}) ->
-    %lager:debug([{class, dike}], "Error! very bad paxos round outcome ~p~n", [{PN, N, V}]),
+				   {ok, {_PN, _N, _V}}) ->
     State.
 
 
@@ -801,8 +741,8 @@ update_log_complete_no_request_issued(State=#state{},
 				      IncLC,
 				      {ok, {decided, _N, {_Other, {?SERVER_PERSISTED_TAG, Any, RemotePersistedIdx}}}}) ->
     update_log_complete(update_and_cut_log(State#state{log_complete=IncLC}, Any, RemotePersistedIdx));
-	
-update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP, 
+
+update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP,
 						   group_members=Nodes,
 						   group_name=GName},
 				      Me,
@@ -818,14 +758,13 @@ update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP,
 	    update_log_complete(State#state{log_complete=IncLC})
     end;
 
-update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP, 
+update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP,
 						   group_members=Nodes,
 						   group_name=GName},
 				      Me,
 				      IncLC,
 				      {ok, {decided, _N, {_From, {?CHANGE_MEMBER_TAG, Me, New, NewsLC}}}}) ->
     if NewsLC > PSP ->
-	    %lager:debug([{class, dike}], "on node ~p, group ~p got replaced by node ~p~n", [node(), GName, New]),
 	    NewMembers=dike_lib:replace(Me, New, Nodes),
 	    dike_dispatcher:group_update(GName, NewMembers),
 	    {replaced, IncLC};
@@ -833,14 +772,13 @@ update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP,
 	    update_log_complete(State#state{log_complete=IncLC})
     end;
 
-update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP, 
+update_log_complete_no_request_issued(State=#state{paxos_server_persisted=PSP,
 						   group_members=Nodes,
 						   group_name=GName},
 				      Me,
 				      IncLC,
 				      {ok, {decided, _N, {_From, {?CHANGE_MEMBER_TAG, Me, New, NewsLC}}}}) ->
     if NewsLC > PSP ->
-	    %lager:debug([{class, dike}], "on node ~p, group ~p got replaced by node ~p~n", [node(), GName, New]),
 	    NewMembers=dike_lib:replace(Me, New, Nodes),
 	    dike_dispatcher:group_update(GName, NewMembers),
 	    {replaced, IncLC};
@@ -885,13 +823,12 @@ update_log_complete_no_request_issued(State=#state{},
 				      {ok, {PN, _N, _V}}) when PN =/= decided ->
     State.
 
-    
+
 log_complete_lockable(#state{log_complete=LC, calls=Calls}) ->
     case ets:last(Calls) of
 	'$end_of_table' ->
 	    true;
 	A when A < LC ->
-	    %lager:debug([{class, dike}], "locking log_complete, old calls remain...~n", []),
 	    true;
 	B when B >= LC ->
 	    false
@@ -899,10 +836,10 @@ log_complete_lockable(#state{log_complete=LC, calls=Calls}) ->
 
 update_and_cut_log(State=#state{members_persisted_at=MPA,
 				group_members=Members,
-				group_name=GName,
+				group_name=_GName,
 				log_cut=LogCut,
-				db_adapter={DBMod, DBProc}}, 
-		   Node, 
+				db_adapter={DBMod, DBProc}},
+		   Node,
 		   PersistedAt) ->
     case dike_lib:position(Members,Node) of
 	not_found ->
@@ -910,25 +847,23 @@ update_and_cut_log(State=#state{members_persisted_at=MPA,
 	N ->
 	    case dike_lib:replace_nth(MPA, N, PersistedAt) of
 		not_found ->
-		    
+
 		    State;
 		[H|T] ->
 		    Min=lists:min([H|T]),
 		    if Min > LogCut ->
-			    %lager:debug([{class, dike}], "cut log for group ~p on ~p, new log_cut: ~p~n", [GName, node(), Min]),
 			    DBMod:bulk_delete(DBProc, [generate_subject(State, Idx) || Idx <- lists:seq(LogCut + 1, Min)]),
-			    %% DBMod:partial_apply(DBProc, 
+			    %% DBMod:partial_apply(DBProc,
 			    %% 			generate_subject(State, LogCut),
 			    %% 			fun({GName, I}, _V) when I < Min ->
 			    %% 				delete;
 			    %% 			   (_K,_V) ->
-			    %% 				%lager:debug([{class, dike}], "seeing a key i should not ~p@~p: (~p,~p)~n", [GName, node(), _K, _V]),
 			    %% 				nothing
 			    %% 			end,
 			    %% 			fun({_, M}, _V) when M == Min->
 			    %% 				true;
 			    %% 			   (_,_) ->
-			    %% 				false 
+			    %% 				false
 			    %% 			end),
 			    State#state{members_persisted_at=[H|T],
 					log_cut=Min};
@@ -939,7 +874,7 @@ update_and_cut_log(State=#state{members_persisted_at=MPA,
     end.
 
 init_db(GroupName) ->
-    
+
     {ok, DBAdapter} = application:get_env(dike, db_adapter),
     case application:get_env(dike, db_mode) of
 	{ok, V} when V==per_vm ; V==per_machine ->
@@ -951,43 +886,36 @@ init_db(GroupName) ->
 	    {DBAdapter, Pid}
     end.
 
-
-
-
 find_node_with_state(Nodes, G, M) ->
     find_node_with_state(Nodes, node(), G, M, Nodes).
 
 find_node_with_state([], _Node, _G, _M, _AN) ->
-    %lager:debug([{class, dike}], "found no node with valid state~n", []),
     error_empty;
 find_node_with_state([Node|T], Node, G, M, AN) ->
     find_node_with_state(T, Node, G, M, AN);
 find_node_with_state([H|T], Node, G, M, AN) ->
-    case  rpc:call(H, dike_dispatcher, check_remote_group, [G, M]) of 
-	pong -> 
-	    %lager:debug([{class, dike}], "found node with valid state ~p~n", [H]),
+    case  rpc:call(H, dike_dispatcher, check_remote_group, [G, M]) of
+	pong ->
 	    H;
 	_H ->
-	    %lager:debug([{class, dike}], "found invalid node ~p~n", [[H,_H]]),
 	    find_node_with_state(T, Node, G, M, AN)
     end.
 
 check_calls_stopping(#state{calls=Calls}, _Idx) ->
-    ets:foldl(fun(E, Acc) ->
-		      %lager:debug([{class, dike}], "Error! found a call in stopping gen_paxos: ~p~n", [E]),
+    ets:foldl(fun(_E, Acc) ->
 		      Acc
 	      end,
 	      0,
 	      Calls).
 
-reissue_request(State=#state{index=I, calls=Calls, log_complete=LC}, 
-		From, 
+reissue_request(State=#state{index=I, calls=Calls, log_complete=LC},
+		From,
 		StoredVal) ->
     IncLC = LC + 1,
     ets:delete(Calls, IncLC),
     ets:insert(Calls, {I + 1, {From, StoredVal}}),
     {ok, _PID} = start_instance(State, I+1, {From, StoredVal}, active).
-    
+
 parse_update_log_complete_resp(State = #state{index=_I, subscriber=Sub, group_name=GName}, {replaced, Idx}, _) ->
     check_calls_stopping(State, Idx),
     gen_server:call(Sub, stop),

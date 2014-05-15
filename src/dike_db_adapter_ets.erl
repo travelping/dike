@@ -13,7 +13,6 @@
 	 stop/1,
 	 persisting/0]).
 
-
 persisting() ->
     false.
 
@@ -40,11 +39,9 @@ partial_apply(Pid, StartKey, MapFun, PredFun) ->
     case do_partial_apply(Pid, ets:lookup(Pid, StartKey), MapFun, PredFun, 0) of
 	{ok, _OpCnt} ->
 	    ok;
-	V -> 
+	V ->
 	    V
     end.
-
-
 
 do_partial_apply(Pid, [{K, V}], MapFun, PredFun, OpCnt) ->
     case PredFun(K, V) of
@@ -68,9 +65,7 @@ bulk_delete(Pid, Keys) when is_list(Keys) ->
     [ets:delete(Pid, Key) || Key <- Keys],
     ok.
 
-
 stop(Pid) ->
     %% nothing to do, will be stopped when the creating process gets trashed
-    %lager:debug([{class, dike}], "dike_db_adapter_ets:stop called on ~p~n", [node()]),
     ets:delete(Pid),
     ok.

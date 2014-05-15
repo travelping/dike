@@ -17,7 +17,7 @@
 -export([start_link/2,
 	 start_link/3,
 	 start_link/5,
-	 call/3, 
+	 call/3,
 	 cast/3,
 	 stop/1,
 	 behaviour_info/1,
@@ -30,7 +30,7 @@
 	 terminate/2, code_change/3]).
 
 behaviour_info(callbacks) ->
-    [{handle_call, 3}, 
+    [{handle_call, 3},
      {init, 1},
      {init, 2},
      {export_state, 1}];
@@ -38,7 +38,7 @@ behaviour_info(callbacks) ->
 behaviour_info(_) ->
     undefinded.
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 -define(MAX_RECEIVE_RETRIES, 3).
 -define(LOG_UPDATE, '$paxos_log_update-').
 
@@ -67,17 +67,14 @@ start_link(PaxosGroup, Module) ->
 ping(Node, GName, Module) ->
     case catch gen_server:call({generate_paxos_server_name(GName, Module), Node}, ping, ?PING_TIMEOUT) of
 	{'EXIT', _Reason} ->
-	      %lager:debug([{class, dike}], "ping failing because of ~p~n", [_Reason]),
 	    pang;
 	pong ->
 	    pong;
 	_R ->
-	    %lager:debug([{class, dike}], "ping failing because of ~p~n", [_R]),
 	    pang
     end.
 
 cast(AllNodes, [], PGroup, Val) ->
-%    %lager:debug([{class, dike}], "call tried all groupmembers: ~p~n", [PGroup]),
     AllNodes2 = case PGroup of
 		    master ->
 			AllNodes;
@@ -119,7 +116,6 @@ cast_helper(Node, PaxosGroup, Msg, Retry) ->
     end.
 
 call(AllNodes, [], PGroup, Val) ->
-    %lager:debug([{class, dike}], "call tried all groupmembers: ~p~n", [{PGroup, Val}]),
     AllNodes2 = case PGroup of
                     master ->
                         AllNodes;
@@ -152,7 +148,6 @@ call_helper(Node, PaxosGroup, Msg, Retry) ->
     case gen_paxos:append(Node, PaxosGroup, Ref, Msg) of
         busy ->
             if Retry==true ->
-                   %lager:debug([{class, dike}], "trying to get an answer from a single node ~p Message: ~p retrying...~n", [{Node, PaxosGroup}, Msg]),
                    timer:sleep(?CLIENT_RETRY_INTERVAL),
                    call_helper(Node, PaxosGroup, Msg, Retry);
                true ->
@@ -188,7 +183,6 @@ export_state(PaxosGroup, Module, CopyStateFrom) ->
 %%% gen_server callbacks
 %%%===================================================================
 init([PaxosGroup, Module, Nodes, CopyStateFrom, Replace]) ->
-    %lager:debug([{class, dike}], "starting statemachine in replace-mode for group ~p on node ~p.~n", [PaxosGroup, node()]),
     case gen_paxos:lock_log_complete(CopyStateFrom, PaxosGroup) of
 	ok ->
 	    {SLP, State} = export_state(PaxosGroup, Module, CopyStateFrom),
@@ -204,13 +198,11 @@ init([PaxosGroup, Module, Nodes, CopyStateFrom, Replace]) ->
 	    ok=gen_paxos:unlock_log_complete(Replace, PaxosGroup),
 	    gen_paxos:subscribe(PaxosGroup),
 	    ok=gen_paxos:set_and_unlock_log_complete(node(), PaxosGroup, SLP),
-	    %lager:debug([{class, dike}], "unlocking after starting group ~p on node ~p~n", [PaxosGroup, node()]),
 	    {ok, #state{group=PaxosGroup,
 			module=Module,
 			client_state=ClientState,
 			state_log_pos=SLP}};
 	_ ->
-	    %lager:debug([{class, dike}], "starting paxos_server for group ~p on node ~p: failed trying to lock_log_complete on ~p, retrying~n", [PaxosGroup, node(), CopyStateFrom]),
 	    init([PaxosGroup, Module, Nodes, CopyStateFrom, Replace])
     end;
 
@@ -228,15 +220,15 @@ init([PaxosGroup, Module, CopyStateFrom]) ->
 			state_log_pos=SLP}};
 	_ ->
 	    init([PaxosGroup, Module, CopyStateFrom])
-		
+
     end;
-	
+
 init([PaxosGroup, Module]) ->
     gen_paxos:subscribe(PaxosGroup),
     {ok, ClientState} = Module:init([{paxos_group, PaxosGroup}]),
     gen_paxos:unlock_log_complete(node(), PaxosGroup),
-    {ok, #state{group=PaxosGroup, 
-		module=Module, 
+    {ok, #state{group=PaxosGroup,
+		module=Module,
 		client_state=ClientState}}.
 
 handle_call(ping, _, State) ->
@@ -253,16 +245,15 @@ handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{modu
     SLP2 = if IncLC > SLP -> %% this is because rounds to control the group topology may interrupt a straight linear order
 		   IncLC;
 	      true ->
-		   %lager:debug([{class, dike}], "paxos_server:trying to invoke an action that we should have already invoked!! (failing consistency)~n", []),
 		   SLP
 	   end,
-    CS2 = try  
+    CS2 = try
 	      case Module:handle_call(Request, From, CState) of
 		  {reply, ReplyFN, CState2} ->
 		      if Mode == leader ->
 			      ErrorHelper = fun() -> try
 							 ReplyFN()
-						     catch 
+						     catch
 							 Error:Reason ->
 							     lager:debug([{class, dike}], "Error in application logic aftereffects! ~p~n", [{Error, Reason}])
 						     end
@@ -275,7 +266,6 @@ handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{modu
 		  {noreply, CState2} ->
 		      CState2;
 		  V ->
-						%lager:debug([{class, dike}], "paxos_server got a bad reply from its client module: ~p~n", [V]),
 		      CState
 	      end
 	  catch
@@ -285,12 +275,10 @@ handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{modu
 	  end,
     {reply, ok, State#state{client_state=CS2, state_log_pos=SLP2}};
 
-handle_call(Msg, From, State=#state{module=Module}) ->
-    %lager:debug([{class, dike}], "received an unhandled call in paxos_server ~p on ~p", [Module, node(), [Msg, From, State]]),
+handle_call(_Msg, _From, State) ->
     {reply, ignored, State}.
 
 handle_cast(persist_state,  State=#state{group=Group, module=Module, client_state=CState}) ->
-    %lager:debug([{class, dike}], "persisting state for group ~p on node ~p~n", [Group, node()]),
     ExportedCState = Module:export_state(CState),
     %% todo: call persistence module (ExportedCState)
     gen_paxos:unlock_log_complete_after_persisting(node(), Group, ExportedCState),
@@ -302,11 +290,8 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-
-terminate(_Reason, State=#state{group=Group}) ->
-    %lager:debug([{class, dike}], "paxos_server terminating  ~p: ~p~n",[{node(), Group}, {_Reason, State}]),
+terminate(_Reason, _State) ->
     ok.
-
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -329,7 +314,7 @@ receive_helper(Ref, PaxosGroup, Node, Msg, ?MAX_RECEIVE_RETRIES -1) ->
 	    lager:error([{class, dike}], "Error! pinging gen_paxos on ~p failed, returning error for the request issued ~p~n", [{PaxosGroup, Node}, Msg]),
 	    error
     end;
-    
+
 receive_helper(Ref, PaxosGroup, Node, Msg, ?MAX_RECEIVE_RETRIES) ->
     receive
 	{?LOG_UPDATE, Ref, Answer} ->
@@ -346,6 +331,3 @@ receive_helper(Ref, PaxosGroup, Node, Msg, Cnt) ->
     after ?CLIENT_CALL_TIMEOUT ->
 	    receive_helper(Ref, PaxosGroup, Node, Msg, Cnt + 1)
     end.
-
-
-    

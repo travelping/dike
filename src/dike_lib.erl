@@ -23,8 +23,8 @@ pmap(F, L, Timeout) ->
     Pids = [spawn(fun() -> Parent ! {self(), F(X)} end) || X <- L],
     lists:map(
         fun(Pid) ->
-            receive {Pid, Result} -> 
-	            Result 
+            receive {Pid, Result} ->
+	            Result
             after Timeout ->
                       {error, timeout}
             end
@@ -44,7 +44,7 @@ create_wrapping_fun([H|T], I) when is_function(H) ->
     end.
 
 pmap_funs(FunList) when is_list(FunList) ->
-    dike_lib:pmap(create_wrapping_fun(FunList, 1), 
+    dike_lib:pmap(create_wrapping_fun(FunList, 1),
 		  lists:seq(1, length(FunList))).
 
 position(List, Val) ->
@@ -70,18 +70,17 @@ uniform_list([]) ->
 uniform_list([H|T]) ->
     uniform_list(T, H).
 
-uniform_list([],_) -> 
-    true;		     
+uniform_list([],_) ->
+    true;
 uniform_list([H|T], H) ->
     uniform_list(T,H);
 uniform_list([_|_], _) ->
     false.
 
-
 replace(Old, New, List) -> replace(Old, New, List, []).
 replace(_Old, _New, [],           Acc) -> lists:reverse(Acc);
 replace(Old,  New,  [Old|List],   Acc) -> replace(Old, New, List, [New|Acc]);
-replace(Old,  New,  [Other|List], Acc) -> replace(Old, New, List, [Other|Acc]).    
+replace(Old,  New,  [Other|List], Acc) -> replace(Old, New, List, [Other|Acc]).
 
 replace_nth([_|T], 0, V) ->
     [V|T];
@@ -91,8 +90,6 @@ replace_nth([H|T], N, V) ->
 
 replace_nth([], _N, _V) ->
     not_found.
-
-
 
 get_group_coordinator_name(GroupName) ->
     list_to_atom(atom_to_list(?COORDINATOR_TAG) ++ atom_to_list(GroupName) ).

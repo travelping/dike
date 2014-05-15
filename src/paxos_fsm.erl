@@ -55,12 +55,12 @@ start(S, InitN, V, Others, ReturnPids, Module, DBAdapter) ->
     start(S, InitN, V, Others, ReturnPids, Module, DBAdapter, passive).
 
 start(S, InitN, V, Others, ReturnPids, Module, {_Module, _Proc} = DBAdapter, Mode) ->
-    All = length(Others)+1,    
+    All = length(Others)+1,
     Quorum = All / 2 ,
     DefaultInitStateData = #paxos_fsm_state{ subject=S, value=V,
 					     all=All, quorum=Quorum, others=Others, init_n=InitN,
 					     return_pids=ReturnPids,
-					     coordinator_module=Module, 
+					     coordinator_module=Module,
 					     n=0,
 					     db_adapter=DBAdapter},
     {StateData, BroadcastMsg} = alter_state_for_mode(DefaultInitStateData, Mode),
@@ -85,7 +85,7 @@ alter_state_for_mode(State=#paxos_fsm_state{subject=S, value=V, all=All, init_n=
 alter_state_for_mode(State, _) ->
     {State, none}.
 
-stop(S) -> 
+stop(S) ->
     gen_fsm:send_all_state_event( generate_global_address( node(),S ), stop).
 
 get_result(S)->
@@ -104,7 +104,7 @@ init([StateData, Mode])->
       end,
     process_flag(trap_exit, true),
     {ok,
-     F(Mode),  
+     F(Mode),
      StateData,
      ?DEFAULT_TIMEOUT};
 init(V) ->
@@ -149,18 +149,17 @@ generate_global_address( Node, Subject )->  {global, {?MODULE, Node, Subject}}.
 %%  - nil ( master lease time out )
 
 
-nil( {prepare,  {S, N, V, From}}, StateData) 
+nil( {prepare,  {S, N, V, From}}, StateData)
   when N > StateData#paxos_fsm_state.prepared_n , S == StateData#paxos_fsm_state.subject ->
-						%    %lager:debug([{class, dike}], "paxos_fsm ~p received prepare for new round on node ~p~n", [self(), node()]),
     NV = case V of
 	     V when V=/=?UNDECIDED , StateData#paxos_fsm_state.value==?UNDECIDED , StateData#paxos_fsm_state.n==0 , StateData#paxos_fsm_state.prepared_n==0->
 		 V;
 	     _ ->
 		 StateData#paxos_fsm_state.value
-	 end,	 
+	 end,
     higher_round_started_go_acceptor(From, N, StateData#paxos_fsm_state{value=NV});
 
-nil( {prepare,  {S, N, _V, _From}}, StateData) 
+nil( {prepare,  {S, N, _V, _From}}, StateData)
   when N < StateData#paxos_fsm_state.prepared_n , S == StateData#paxos_fsm_state.subject ->
     start_new_round(StateData);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -170,7 +169,7 @@ nil( {prepare,  {S, N, _V, _From}}, StateData)
 nil( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
 
-nil( timeout, StateData )-> 
+nil( timeout, StateData )->
     start_new_round(StateData);
 
 nil(UnknownEvent, StateData)-> % ignore
@@ -181,7 +180,7 @@ nil(UnknownEvent, StateData)-> % ignore
 %% =========================================
 %%  - preparing
 
-preparing( {prepare,  {S, N, _V, From}},  StateData ) 
+preparing( {prepare,  {S, N, _V, From}},  StateData )
   when N > StateData#paxos_fsm_state.prepared_n, StateData#paxos_fsm_state.subject==S  ->
     higher_round_started_go_acceptor(From, N, StateData);
 
@@ -192,7 +191,6 @@ preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
 	    true ->
 		 StateData#paxos_fsm_state.value
 	 end,
-    %lager:debug([{class, dike}], "got quorum at prepare!, sending out: ~p~n", [[StateData#paxos_fsm_state.others, S, {propose, {S, PN, NV, node()}} ]]),
     broadcast( StateData#paxos_fsm_state.others, StateData, {propose, {S, PN, NV, node()}} ),
 						%           lager:info([{class, dike}], "proposing ~p...~n", [{propose, {S,Nc,Vc,node()}}]),
     db_update(StateData, {PN, StateData#paxos_fsm_state.n, V}),
@@ -202,7 +200,6 @@ preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
 
 preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
   when PN == StateData#paxos_fsm_state.prepared_n , S == StateData#paxos_fsm_state.subject  ->
-    %lager:debug([{class, dike}], "received a vote while preparing.", []),
     Current = StateData#paxos_fsm_state.current,
     {NN, NV} = if N > StateData#paxos_fsm_state.n ->
 		       {N, V};
@@ -214,7 +211,7 @@ preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
 preparing( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
 
-preparing( timeout, StateData)-> 
+preparing( timeout, StateData)->
     start_new_round(StateData);
 
 preparing( _Event, StateData) ->
@@ -224,19 +221,17 @@ preparing( _Event, StateData) ->
 %% =========================================
 %%  - proposing
 %% =========================================
-proposing( {prepare,  {S, N, _V, From}},  StateData) 
+proposing( {prepare,  {S, N, _V, From}},  StateData)
   when S == StateData#paxos_fsm_state.subject , N > StateData#paxos_fsm_state.prepared_n ->  %a newer round has been started, somebody didn't get the memo TODO
     higher_round_started_go_acceptor(From, N, StateData);
 
-proposing( {propose_result,  {S, N, V, _From}}, StateData)
+proposing( {propose_result,  {S, N, _V, _From}}, StateData)
   when N==StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.quorum > StateData#paxos_fsm_state.current+1 , S == StateData#paxos_fsm_state.subject ->
-    %lager:debug([{class, dike}], "received a vote while proposing ~p~n", [{S,N,V}]),
     Current = StateData#paxos_fsm_state.current,
     {next_state, proposing, StateData#paxos_fsm_state{current=Current+1}, ?DEFAULT_TIMEOUT };
 
-proposing( {propose_result,  {S, N, _V, _From}}, StateData) 
+proposing( {propose_result,  {S, N, _V, _From}}, StateData)
   when N==StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.quorum < StateData#paxos_fsm_state.current+1 , S == StateData#paxos_fsm_state.subject ->
-    %lager:debug([{class, dike}], "got quorum at proposing!!~n", []),
     broadcast( StateData#paxos_fsm_state.others, StateData, {decide, {S, N, StateData#paxos_fsm_state.value, node()}} ),
     Current=StateData#paxos_fsm_state.current,
     decided_callback( StateData#paxos_fsm_state{current=Current+1}, {propose_result,  {S, N, StateData#paxos_fsm_state.value, _From}});
@@ -244,10 +239,10 @@ proposing( {propose_result,  {S, N, _V, _From}}, StateData)
 proposing( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
 
-proposing( timeout, StateData)-> 
+proposing( timeout, StateData)->
     start_new_round(StateData);
 
-proposing( {prepare_result, {S, N, _V, _From}}, StateData) when StateData#paxos_fsm_state.prepared_n == N ->
+proposing( {prepare_result, {_S, N, _V, _From}}, StateData) when StateData#paxos_fsm_state.prepared_n == N ->
     %% ignore
     {next_state, proposing, StateData};
 
@@ -260,12 +255,12 @@ proposing( _Event, StateData) ->
 %%  - acceptor
 %% =========================================
 
-acceptor( {prepare,  {S, N, _V, From}},  StateData ) 
+acceptor( {prepare,  {S, N, _V, From}},  StateData )
   when N > StateData#paxos_fsm_state.prepared_n , StateData#paxos_fsm_state.subject == S ->
     higher_round_started_go_acceptor(From, N, StateData);
 
-acceptor( {propose,  {S, N, V, From}},  StateData) 
-  when N == StateData#paxos_fsm_state.prepared_n, StateData#paxos_fsm_state.subject==S -> 
+acceptor( {propose,  {S, N, V, From}},  StateData)
+  when N == StateData#paxos_fsm_state.prepared_n, StateData#paxos_fsm_state.subject==S ->
     db_update(StateData, {N, N, V}),
     send( From, StateData, {propose_result , {S, N, [], node() }} ),
     {next_state, learner, StateData#paxos_fsm_state{n=N, value=V, prepared_n=N}, ?DEFAULT_TIMEOUT};
@@ -273,7 +268,7 @@ acceptor( {propose,  {S, N, V, From}},  StateData)
 acceptor( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
 
-acceptor( timeout, StateData=#paxos_fsm_state{}) -> 
+acceptor( timeout, StateData=#paxos_fsm_state{}) ->
     start_new_round(StateData);
 
 acceptor( _Event, StateData) ->
@@ -284,13 +279,13 @@ acceptor( _Event, StateData) ->
 %%  - learner
 %% =========================================
 
-learner( {prepare,  {S, N, _V, From}}, StateData) when N > StateData#paxos_fsm_state.prepared_n , StateData#paxos_fsm_state.subject==S-> 
-    higher_round_started_go_acceptor(From, N, StateData);  
+learner( {prepare,  {S, N, _V, From}}, StateData) when N > StateData#paxos_fsm_state.prepared_n , StateData#paxos_fsm_state.subject==S->
+    higher_round_started_go_acceptor(From, N, StateData);
 
 learner( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
 
-learner( timeout, StateData=#paxos_fsm_state{}) -> 
+learner( timeout, StateData=#paxos_fsm_state{}) ->
     start_new_round(StateData);
 
 learner( _Event, StateData )->
@@ -320,10 +315,9 @@ decided( _Event, StateData )->
     {next_state, decided, StateData , ?DECIDED_TIMEOUT}.
 
 %% @doc must be called back whenever the subject got consensus!
-decided_callback(StateData, {decide, {S, N, V, _From} = Params}) 
+decided_callback(StateData, {decide, {S, N, V, _From} = Params})
   when N =/= -1, N < StateData#paxos_fsm_state.n , V /= StateData#paxos_fsm_state.value , S == StateData#paxos_fsm_state.subject ->
-    %lager:debug([{class, dike}], "error, error, got a decided callback on the wrong value!~p~n",[[Params, StateData]]),
-    decided_callback(StateData,{propose_result, Params});    
+    decided_callback(StateData,{propose_result, Params});
 
 decided_callback(StateData, {_CMD, {S, N, V, _From}})
   when S==StateData#paxos_fsm_state.subject ->
@@ -354,23 +348,19 @@ handle_sync_event(stop, From, StateName, StateData)->
 terminate(R, decided, _StateData) when R == normal ; R== killed ; R==shutdown ->
     ok;
 
-terminate(Reason, StateName, StateData) ->
-    %lager:debug([{class, dike}], "paxos_fsm terminating on node ~p , ~p~n", [node(), [Reason, StateName, StateData]]),
+terminate(_Reason, _StateName, _StateData) ->
     ok.
 
 start_new_round(StateData) ->
     NewN = get_next_n( StateData#paxos_fsm_state.prepared_n, StateData#paxos_fsm_state.all, StateData#paxos_fsm_state.init_n),
     db_update(StateData, {NewN, StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}),
     S=StateData#paxos_fsm_state.subject,
-    V=StateData#paxos_fsm_state.value,
-    %lager:debug([{class, dike}], "Starting new Paxos round on ~p, {S,N,V} ~p~n", [node(), {S, NewN, V}]),
     broadcast( StateData#paxos_fsm_state.others, StateData, {prepare, {S, NewN, ?UNDECIDED, node()}} ),
     {next_state, preparing, StateData#paxos_fsm_state{current=1, prepared_n=NewN}, ?DEFAULT_TIMEOUT}.
 
 higher_round_started_go_acceptor( From, N,  StateData=#paxos_fsm_state{} ) ->
     db_update(StateData, {N, StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}),
     send( From, StateData, {prepare_result, {StateData#paxos_fsm_state.subject, N, {StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}, node()}}),
-    %lager:debug([{class, dike}], "received prepare for higher round, going acceptor...old-round:~p new-round:~p~n", [StateData#paxos_fsm_state.prepared_n, N]),
     {next_state, acceptor, StateData#paxos_fsm_state{prepared_n=N}, ?DEFAULT_TIMEOUT}.
 
 
