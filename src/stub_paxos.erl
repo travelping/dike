@@ -52,12 +52,11 @@ handle_call({append, V}, From, State = #state{paxos_server_mod=PSM, paxos_server
     try
 	NewPSS = case PSM:handle_call(V, {single_node_reply, From}, PSS) of
 		     {reply, ReplyFN, PSS2} ->
-
 			 ErrorHelper = fun() -> try
 						    ReplyFN()
 						catch
 						    Error:Reason ->
-							lager:debug([{class, dike}], "Error ~p in application logic aftereffects! Request: ~p~n", [{Error, Reason}, V])
+							lager:error([{class, dike}], "Error ~p in application logic aftereffects! Request: ~p~n Stacktrace: ~p~n", [{Error, Reason}, V, erlang:get_stacktrace()])
 						end
 				       end,
 			 catch spawn(ErrorHelper),
