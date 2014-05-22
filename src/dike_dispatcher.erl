@@ -29,13 +29,12 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
-
+-define(TABLE, dispatcher_table).
 -define(DISPATCHER_TIMEOUT, 2000).
 
--record(state, {routing_table,
-		rt_timestamp=0,
-		local_groups=[],
-		timer}).
+-record(state, {rt_timestamp=0,
+                local_groups=[],
+                timer}).
 
 %%%===================================================================
 %%% API
@@ -47,28 +46,23 @@ check_remote_group(G, _M) ->
 %    Groups= get_nodes(G) -- [node()],
     gen_paxos:busy_ping(node(), G).
 
-
-
 get_nodes(PGroup) ->
-    get_nodes(PGroup, initial).
+    get_nodes(PGroup, 2).
 
-get_nodes(PGroup, initial) ->
-    case catch ets:lookup(dispatcher_table, PGroup) of
+get_nodes(PGroup, N) ->
+    case catch ets:lookup(?TABLE, PGroup) of
         [#routing_table_entry{group_name=PGroup, nodes=RVal}]  ->
             RVal;
         _ ->
-            timer:sleep(500),
-            catch refresh_routing_table(), %% well this is desperate - but works :)
-            get_nodes(PGroup, final)
-    end;
-
-get_nodes(PGroup, final) ->
-    case catch ets:lookup(dispatcher_table, PGroup) of
-        [#routing_table_entry{group_name=PGroup, nodes=RVal}]  ->
-            RVal;
-        _E ->
-            {error, not_found}
+            get_nodes_refresh(PGroup, N - 1)
     end.
+
+get_nodes_refresh(_PGroup, 0) ->
+    {error, not_found};
+get_nodes_refresh(PGroup, N) ->
+    timer:sleep(500),
+    catch refresh_routing_table(), %% well this is desperate - but works :)
+    get_nodes(PGroup, N).
 
 refresh_routing_table() ->
     gen_server:call(?MODULE, refresh_routing_table, 20000).
@@ -90,7 +84,6 @@ request(Node, PGroup, Val, I, N) ->
 	    request(Node, PGroup, Val, I+1, N)
     end.
 
-
 request(PGroup, Val) ->
     case get_nodes(PGroup) of
 	Nodes when is_list(Nodes), length(Nodes) == 1 ->
@@ -102,7 +95,7 @@ request(PGroup, Val) ->
     end.
 
 cast(PGroup, Val) ->
-    Nodes =  get_nodes(PGroup),
+    Nodes = get_nodes(PGroup),
     paxos_server:cast(Nodes, PGroup, Val).
 
 group_update(GName, NewMembers) ->
@@ -125,25 +118,24 @@ get_routing_table() ->
 
 init([_Masters]) ->
     process_flag(trap_exit, true),
-    RoutingTable=ets:new(dispatcher_table, [ordered_set, protected, named_table, {keypos, 2}, {read_concurrency, true}]),
+    ets:new(?TABLE, [ordered_set, protected, named_table, {keypos, 2}, {read_concurrency, true}]),
     TRef = erlang:send_after(?DISPATCHER_TIMEOUT, ?MODULE, timeout),
-    {ok, #state{routing_table=RoutingTable, rt_timestamp=dike_lib:timestamp(),
-		timer=TRef, local_groups=[]}}.
+    {ok, #state{rt_timestamp=dike_lib:timestamp(), timer=TRef, local_groups=[]}}.
 
-handle_call(get_routing_table, _From, State=#state{routing_table=RT}) ->
-    {reply, ets:tab2list(RT), State};
+handle_call(get_routing_table, _From, State) ->
+    {reply, ets:tab2list(?TABLE), State};
 
 
-handle_call({group_update, GName, NewMembers}, _From, State=#state{routing_table=RT, local_groups=LGS}) ->
+handle_call({group_update, GName, NewMembers}, _From, State=#state{local_groups=LGS}) ->
     A= length(NewMembers) - length(NewMembers -- [node()]),
     LGS2 = if A == 0 ->
 		   LGS -- [GName];
 	      true ->
 		   LGS
 	   end,
-    case ets:lookup(RT, GName) of
+    case ets:lookup(?TABLE, GName) of
 	[RTE] ->
-	    ets:insert(RT, RTE#routing_table_entry{nodes=NewMembers, lastchange=dike_lib:timestamp()}),
+	    ets:insert(?TABLE, RTE#routing_table_entry{nodes=NewMembers, lastchange=dike_lib:timestamp()}),
 	    {reply, ok, State#state{local_groups=LGS2}};
 	[] ->
 	    {reply, ok, update_routing_table(State, true)}
@@ -153,13 +145,13 @@ handle_call(refresh_routing_table, _From, State) ->
     S2 = update_routing_table(State, true),
     {reply, ok, S2};
 
-handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{routing_table=RoutingTable, local_groups=MyGroups}) ->
-    S3=case ets:lookup(RoutingTable, Gname) of
+handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{local_groups=MyGroups}) ->
+    S3=case ets:lookup(?TABLE, Gname) of
 	   [#routing_table_entry{group_name=Gname}] ->
 	       case {paxos_server:ping(node(), Gname, PaxosServerModule), gen_paxos:busy_ping(node(), Gname)} of
 		   {pang, pang} ->
 		       %%the dispatcher found the routingtable before being informed about starting this group....
-		       ets:insert(RoutingTable, #routing_table_entry{group_name=Gname,
+		       ets:insert(?TABLE, #routing_table_entry{group_name=Gname,
 								     nodes=Nodes,
 								     module=PaxosServerModule}),
 		       exit(whereis(dike_lib:get_group_coordinator_name(Gname)), normal),
@@ -179,7 +171,7 @@ handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{ro
 			    gen_paxos:start_link_with_subscriber(Gname, PaxosServerModule, Nodes),
 			    State#state{local_groups=[Gname| MyGroups]}
 		    end,
-	       ets:insert(RoutingTable, #routing_table_entry{group_name=Gname,
+	       ets:insert(?TABLE, #routing_table_entry{group_name=Gname,
 							     nodes=Nodes,
 							     module=PaxosServerModule}),
 	       S2
@@ -190,13 +182,13 @@ handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
-handle_cast({join_group, Group, Module, Nodes, From, To}, State=#state{routing_table=RT, local_groups=MyGroups}) ->
+handle_cast({join_group, Group, Module, Nodes, From, To}, State=#state{local_groups=MyGroups}) ->
     case dike_lib:position(MyGroups, Group) of
 	not_found ->
             lager:debug([{class, dike}], "joining group ~p on ~p~n", [Group, node()]),
 	    Nodes2=dike_lib:replace(From, To, Nodes),
 	    gen_paxos:start_link_and_replace(Group, Module, Nodes2, From, From),
-	    ets:insert(RT, #routing_table_entry{nodes=Nodes2, module=Module, group_name=Group, lastchange=dike_lib:timestamp()}),
+	    ets:insert(?TABLE, #routing_table_entry{nodes=Nodes2, module=Module, group_name=Group, lastchange=dike_lib:timestamp()}),
 	    {noreply, State#state{local_groups=[Group | MyGroups]}};
 	_Pos ->
 	    {noreply, State}
@@ -229,14 +221,14 @@ code_change(_OldVsn, State, _Extra) ->
 update_routing_table(State) ->
     update_routing_table(State, false).
 
-update_routing_table(State=#state{routing_table= RT, rt_timestamp=Timestamp}, Forced) ->
+update_routing_table(State=#state{rt_timestamp=Timestamp}, Forced) ->
     Now = dike_lib:timestamp(),
-    TabCount = get_table_entry_count(RT),
+    TabCount = get_table_entry_count(?TABLE),
     if Now - ?MAX_RT_AGE > Timestamp ; Forced == true ; TabCount == 0 ->
 	    case  catch dike_master:get_routing_table() of
 		{MyGroups , V} when is_list(V), is_list(MyGroups) ->
-		    ets:delete_all_objects(RT),
-		    ets:insert(RT, V),
+		    ets:delete_all_objects(?TABLE),
+		    ets:insert(?TABLE, V),
 		    State#state{rt_timestamp=dike_lib:timestamp(), local_groups=MyGroups};
 		_H ->
 		    State
@@ -245,9 +237,8 @@ update_routing_table(State=#state{routing_table= RT, rt_timestamp=Timestamp}, Fo
 	    State
     end.
 
-check_local_groups(State=#state{routing_table=RT, local_groups=MyGroups}) ->
-
-    [check_local_group(State, RTE) || [RTE] <- [ets:lookup(RT, G) || G <- MyGroups]],
+check_local_groups(State=#state{local_groups=MyGroups}) ->
+    [check_local_group(State, RTE) || [RTE] <- [ets:lookup(?TABLE, G) || G <- MyGroups]],
     State.
 
 check_local_group(_State, RTE=#routing_table_entry{group_name=GName, nodes=Nodes}) ->
