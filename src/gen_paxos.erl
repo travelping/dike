@@ -120,7 +120,7 @@ start_link_with_subscriber(Group, Module, Nodes) ->
 	    start_link(Group, Nodes, {true, node()}, {DBMod, DBHandler}),
 	    paxos_server:start_link(Group, Module);
 	A ->
-	    lager:debug([{class, dike}], "bad db response while trying to get old states: ~p~n", [A])
+	    lager:debug([{class, dike}], "bad db response while trying to get old states: ~p", [A])
     end.
 
 %%--------------------------------------------------------------------
@@ -310,7 +310,7 @@ handle_call({request_issued_ping, Ref, Pid}, _From, State=#state{group_name=Grou
 	    _DecidedVal = DBMod:get(DBProc, generate_subject(State, Idx)),
 	    {reply, pong, State, ?UPDATE_LC_TIMEOUT};
 	List when is_list(List) ->
-	    lager:info([{class, dike}], "Error! in request_issued_ping found to many entries! ~p~n", [List]),
+	    lager:info([{class, dike}], "Error! in request_issued_ping found to many entries! ~p", [List]),
 	    {reply, pong, State, ?UPDATE_LC_TIMEOUT}
     end;
 
@@ -418,7 +418,7 @@ handle_cast({round_decided, {{_Node, _Grp, Idx}, _N, _V}}, State = #state{index=
     parse_update_log_complete_resp(State, NewState, {noreply});
 
 handle_cast(_Msg, State) ->
-    lager:info([{class, dike}], "in gen_paxos, handle_cast, message unhandled:~p~n", [_Msg]),
+    lager:info([{class, dike}], "in gen_paxos, handle_cast, message unhandled:~p", [_Msg]),
     {noreply, State, ?UPDATE_LC_TIMEOUT}.
 
 handle_info(timeout, State) ->
@@ -426,7 +426,7 @@ handle_info(timeout, State) ->
     parse_update_log_complete_resp(State, NewState, {noreply});
 
 handle_info(_Info, State) ->
-    lager:info([{class, dike}], "in gen_paxos, handle_info called: ~p~n", [[_Info, State]]),
+    lager:info([{class, dike}], "in gen_paxos, handle_info called: ~p", [[_Info, State]]),
     {noreply, State, ?UPDATE_LC_TIMEOUT}.
 
 terminate(_Reason, _State=#state{db_adapter={DBMod, DBProc}}) ->
@@ -490,11 +490,11 @@ relay(S, Idx, {CMD, {_,_,_,From}}, State=#state{log_complete=LC, db_adapter={DBM
 	_ ->
 	    case DBMod:get(DBProc, S) of
 		{error, undefined} ->
-		    lager:debug([{class, dike}], "trying to answer with decide to an older round (< LC), found no Value!!~n",[]);
+		    lager:debug([{class, dike}], "trying to answer with decide to an older round (< LC), found no Value!!",[]);
 		{ok, {decided, LN, Val}} ->
 		    send(From, S, {decide, {S, LN, Val, node()}});
 		{ok, {_PN, _N, _V}} ->
-		    lager:debug([{class, dike}], "trying to answer with decide to an older round (< LC), found no Value!!~n",[])
+		    lager:debug([{class, dike}], "trying to answer with decide to an older round (< LC), found no Value!!",[])
 	    end,
 	    {noreply, State, ?UPDATE_LC_TIMEOUT}
     end;
@@ -555,7 +555,7 @@ update_subscriber(Sub, Msg) ->
 	gen_server:call(Sub, Msg, ?UPDATE_SUBSCRIBER_TIMEOUT)
     catch
 	Error:Reason ->
-	    lager:error([{class, dike}], "Error! not able to update subscriber ~p on Node ~p~n", [{Error, Reason}, node()]),
+	    lager:error([{class, dike}], "Error! not able to update subscriber ~p on Node ~p", [{Error, Reason}, node()]),
 	    update_subscriber(Sub, Msg)
     end.
 

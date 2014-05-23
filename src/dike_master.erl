@@ -76,7 +76,7 @@ init(_Options) ->
     GT = ets:new(group_table, [ordered_set, private, {keypos, 2}]),
     MT = ets:new(machine_table, [bag, private, {keypos, 1}]),
     {ok, MasterNodes} = application:get_env(dike, masters),
-    lager:debug([{class, dike}], "master starting on node ~p~n", [node()]),
+    lager:debug([{class, dike}], "master starting on node ~p", [node()]),
     {ok, #state{group_table=GT,
 		machine_table=MT,
 		groups=[],
@@ -113,7 +113,7 @@ handle_call({add_group, Gname, PaxosServerModule}, From, State = #state{groups=G
 	    add_group_int(State, Gname, PaxosServerModule),
 	    [RVal=#routing_table_entry{group_name=Gname, nodes=Nodes}] = ets:lookup(GT, Gname),
 	    RFun = fun() ->
-                           lager:debug([{class, dike}], "added a group to dike master: ~p~n", [Gname]),
+                           lager:debug([{class, dike}], "added a group to dike master: ~p", [Gname]),
 			   [ok = dike_dispatcher:new_group(Node, Gname, PaxosServerModule, Nodes) || Node <- Nodes],
 			   paxos_server:reply(From, RVal)
 		   end,
@@ -198,7 +198,7 @@ add_group_int(State=#state{machine_table=MT, group_table=GT}, GroupName, ModuleN
 	    if length(NodeList) < ?GROUP_SIZE ->
 		    ets:insert(GT, E#routing_table_entry{nodes=[Node | NodeList]});
 	       true ->
-		    lager:debug([{class, dike}], "in dike_Master, trying to add a Node to a group that is already full!~n", [])
+		    lager:debug([{class, dike}], "in dike_Master, trying to add a Node to a group that is already full!", [])
 	    end
     end,
     add_group_int(State, GroupName, ModuleName, N-1).

@@ -30,7 +30,7 @@
 %%%===================================================================
 
 append(Node, GName, V) ->
-    lager:debug([{class, dike}], "trying to append  : ~p~n", [{Node, GName, V}]),
+    lager:debug([{class, dike}], "trying to append  : ~p", [{Node, GName, V}]),
     gen_server:call({generate_group_name(GName), Node}, {append, V}).
 
 start_link(Gname, PaxosServerModule) ->
@@ -43,7 +43,7 @@ start_link(Gname, PaxosServerModule) ->
 init([Gname, PaxosServerModule]) ->
     Options=[{paxos_group, Gname}],
     {ok, InitialState} = PaxosServerModule:init(Options),
-    lager:info([{class, dike}], "Initialized state for ~p~n", [{Gname, PaxosServerModule}]),
+    lager:info([{class, dike}], "Initialized state for ~p", [{Gname, PaxosServerModule}]),
     {ok, #state{group=Gname,
 		paxos_server_mod=PaxosServerModule,
 		paxos_server_state=InitialState}}.
@@ -56,7 +56,7 @@ handle_call({append, V}, From, State = #state{paxos_server_mod=PSM, paxos_server
 						    ReplyFN()
 						catch
 						    Error:Reason ->
-							lager:error([{class, dike}], "Error ~p in application logic aftereffects! Request: ~p~n Stacktrace: ~p~n", [{Error, Reason}, V, erlang:get_stacktrace()])
+							lager:error([{class, dike}], "Error in application aftereffects~nRequest: ~p~nError: ~p", [V, {Error, Reason, erlang:get_stacktrace()}])
 						end
 				       end,
 			 catch spawn(ErrorHelper),
@@ -69,7 +69,7 @@ handle_call({append, V}, From, State = #state{paxos_server_mod=PSM, paxos_server
 	{noreply, State#state{paxos_server_state=NewPSS}}
     catch
 	Class:Error ->
-	    lager:error([{class, dike}], "Error! client application brought an error up in a transition: ~p~n", [{Class, Error}]),
+	    lager:error([{class, dike}], "Error in application transition~nRequest: ~p~nError: ~p", [V, {Class, Error, erlang:get_stacktrace()}]),
 	    {reply, {error, client_application_error}, State}
     end;
 

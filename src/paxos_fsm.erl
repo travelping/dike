@@ -108,7 +108,7 @@ init([StateData, Mode])->
      StateData,
      ?DEFAULT_TIMEOUT};
 init(V) ->
-    lager:info([{class, dike}], "in wrong init...!!!! -> ~p~n", [V]).
+    lager:info([{class, dike}], "in wrong init...!!!! -> ~p", [V]).
 
 broadcast(Others, #paxos_fsm_state{subject=S, coordinator_module=Mod}, Message)->
     Mod:broadcast(Others, S, Message).
@@ -173,7 +173,7 @@ nil( timeout, StateData )->
     start_new_round(StateData);
 
 nil(UnknownEvent, StateData)-> % ignore
-    lager:debug([{class, dike}],  "unknown event: ~p : all ignored.~n", [{UnknownEvent, StateData}] ),
+    lager:debug([{class, dike}],  "unknown event: ~p : all ignored.", [{UnknownEvent, StateData}] ),
     {next_state, nil, StateData, ?DEFAULT_TIMEOUT}.
 
 
@@ -192,7 +192,7 @@ preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
 		 StateData#paxos_fsm_state.value
 	 end,
     broadcast( StateData#paxos_fsm_state.others, StateData, {propose, {S, PN, NV, node()}} ),
-						%           lager:info([{class, dike}], "proposing ~p...~n", [{propose, {S,Nc,Vc,node()}}]),
+						%           lager:info([{class, dike}], "proposing ~p...", [{propose, {S,Nc,Vc,node()}}]),
     db_update(StateData, {PN, StateData#paxos_fsm_state.n, V}),
     {next_state, proposing, StateData#paxos_fsm_state{current=1, n=PN, value=NV}, ?DEFAULT_TIMEOUT};
 
@@ -215,7 +215,7 @@ preparing( timeout, StateData)->
     start_new_round(StateData);
 
 preparing( _Event, StateData) ->
-    lager:debug([{class, dike}], "received unhandled message while preparing: ~p~n", [{_Event, StateData}]),
+    lager:debug([{class, dike}], "received unhandled message while preparing: ~p", [{_Event, StateData}]),
     {next_state, preparing, StateData, ?DEFAULT_TIMEOUT}.
 
 %% =========================================
@@ -247,7 +247,7 @@ proposing( {prepare_result, {_S, N, _V, _From}}, StateData) when StateData#paxos
     {next_state, proposing, StateData};
 
 proposing( _Event, StateData) ->
-    lager:debug([{class, dike}], "received unhandled message while proposing: ~p~n", [{_Event, StateData}]),
+    lager:debug([{class, dike}], "received unhandled message while proposing: ~p", [{_Event, StateData}]),
     {next_state, proposing, StateData, ?DEFAULT_TIMEOUT}.
 
 

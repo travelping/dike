@@ -162,7 +162,7 @@ handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{lo
 		       State
 	       end;
 	   [] ->
-               lager:debug([{class, dike}], "adding group ~p to dike on ~p!~n", [Gname, node()]),
+               lager:debug([{class, dike}], "adding group ~p to dike on ~p!", [Gname, node()]),
 	       S2 = case dike_lib:position(Nodes, node()) of
 			not_found ->
 			    nothing_to_do_on_this_node,
@@ -185,7 +185,7 @@ handle_call(_Request, _From, State) ->
 handle_cast({join_group, Group, Module, Nodes, From, To}, State=#state{local_groups=MyGroups}) ->
     case dike_lib:position(MyGroups, Group) of
 	not_found ->
-            lager:debug([{class, dike}], "joining group ~p on ~p~n", [Group, node()]),
+            lager:debug([{class, dike}], "joining group ~p on ~p", [Group, node()]),
 	    Nodes2=dike_lib:replace(From, To, Nodes),
 	    gen_paxos:start_link_and_replace(Group, Module, Nodes2, From, From),
 	    ets:insert(?TABLE, #routing_table_entry{nodes=Nodes2, module=Module, group_name=Group, lastchange=dike_lib:timestamp()}),
@@ -208,7 +208,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(Reason, #state{local_groups=MyGroups}) ->
-    lager:info([{class, dike}], "dispatcher terminating for reason ~p~n", [Reason]),
+    lager:info([{class, dike}], "dispatcher terminating for reason ~p", [Reason]),
     [gen_paxos:stop(Group) || Group <- MyGroups],
     ok.
 

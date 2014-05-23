@@ -41,7 +41,7 @@ start(_Type, _Args) ->
     	    {ok, DBAdapter} = application:get_env(dike, db_adapter),
     	    {ok, Pid} = DBAdapter:open(DBFolder2),
     	    true = register(?DB_TRANSACTION_HANDLER, Pid),
-	    lager:debug([{class, dike}], "initialized db per_machine ~p ~n", [node()]);
+	    lager:debug([{class, dike}], "initialized db per_machine ~p", [node()]);
 
     	{ok, per_vm} ->
 	    {ok, DBFolder} = application:get_env(dike, db_dir),

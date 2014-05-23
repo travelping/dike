@@ -168,7 +168,7 @@ reply(cast, _Msg) ->
 reply({Ref, From}, Msg) ->
     From ! {?LOG_UPDATE, Ref, Msg};
 reply(A, B) ->
-    lager:debug([{class, dike}], "in paxos_server:reply, badargs: ~p, ~p~n", [A, B]).
+    lager:debug([{class, dike}], "in paxos_server:reply, badargs: ~p, ~p", [A, B]).
 
 
 export_state(PaxosGroup, Module, CopyStateFrom) ->
@@ -255,7 +255,7 @@ handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{modu
 							 ReplyFN()
 						     catch
 							 Error:Reason ->
-							     lager:debug([{class, dike}], "Error in application logic aftereffects! ~p~n", [{Error, Reason}])
+							     lager:error([{class, dike}], "Error in application aftereffects~nRequest: ~p~nError: ~p", [Request, {Error, Reason, erlang:get_stacktrace()}])
 						     end
 					    end,
 			      catch spawn(ErrorHelper);
@@ -270,7 +270,7 @@ handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{modu
 	      end
 	  catch
 	      Class:Error ->
-		  lager:error([{class, dike}], "Error! client application brought an error up in a transition: ~p~n", [{Class, Error}]),
+		  lager:error([{class, dike}], "Error in application transition~nRequest: ~p~nError: ~p", [Request, {Class, Error, erlang:get_stacktrace()}]),
 		  CState
 	  end,
     {reply, ok, State#state{client_state=CS2, state_log_pos=SLP2}};
@@ -311,7 +311,7 @@ receive_helper(Ref, PaxosGroup, Node, Msg, ?MAX_RECEIVE_RETRIES -1) ->
 	pong ->
 	    receive_helper(Ref, PaxosGroup, Node, Msg, ?MAX_RECEIVE_RETRIES);
 	pang ->
-	    lager:error([{class, dike}], "Error! pinging gen_paxos on ~p failed, returning error for the request issued ~p~n", [{PaxosGroup, Node}, Msg]),
+	    lager:error([{class, dike}], "Error! pinging gen_paxos on ~p failed, returning error for the request issued ~p", [{PaxosGroup, Node}, Msg]),
 	    error
     end;
 
@@ -320,7 +320,7 @@ receive_helper(Ref, PaxosGroup, Node, Msg, ?MAX_RECEIVE_RETRIES) ->
 	{?LOG_UPDATE, Ref, Answer} ->
 	    Answer
     after ?CLIENT_CALL_TIMEOUT ->
-	    lager:error([{class, dike}], "Error! got no response from ~p although it was busy-pinged in last try, msg : ~p~n", [{PaxosGroup, Node},  Msg]),
+	    lager:error([{class, dike}], "Error! got no response from ~p although it was busy-pinged in last try, msg : ~p", [{PaxosGroup, Node},  Msg]),
 	    error
     end;
 
