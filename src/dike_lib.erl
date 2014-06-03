@@ -13,39 +13,34 @@
 -include_lib("../include/dike.hrl").
 
 -compile(export_all).
+-define(DEFAULT_TIMEOUT, 300000).
 
 %% Parrallel Map
-pmap(F, L) ->
-    pmap(F, L, 300000).
+pmap(FList) ->
+    pmap(FList, ?DEFAULT_TIMEOUT).
+
+pmap(FList, Timeout) when is_list(FList) ->
+    Parent = self(),
+    Pids = [proc_lib:spawn(fun() -> Parent ! {self(), catch F()} end) || F <- FList],
+    receive_for_pids(Pids, Timeout);
+
+pmap(F, L) when is_function(F) ->
+    pmap(F, L, ?DEFAULT_TIMEOUT).
 
 pmap(F, L, Timeout) ->
     Parent = self(),
-    Pids = [spawn(fun() -> Parent ! {self(), F(X)} end) || X <- L],
-    lists:map(
-        fun(Pid) ->
-            receive {Pid, Result} ->
-	            Result
-            after Timeout ->
-                      {error, timeout}
-            end
-        end, Pids).
+    Pids = [proc_lib:spawn(fun() -> Parent ! {self(), catch F(X)} end) || X <- L],
+    receive_for_pids(Pids, Timeout).
 
-create_wrapping_fun([], _) ->
-    fun(_) ->
-	    {error, no_fun_defined}
-    end;
+% Backwardscompatibility
+pmap_funs(FList) -> pmap(FList).
 
-create_wrapping_fun([H|T], I) when is_function(H) ->
-    fun(J) when I == J->
-	    H();
-       (O) ->
-	    Fun = create_wrapping_fun(T, I+1),
-	    Fun(O)
-    end.
-
-pmap_funs(FunList) when is_list(FunList) ->
-    dike_lib:pmap(create_wrapping_fun(FunList, 1),
-		  lists:seq(1, length(FunList))).
+receive_for_pids(Pids, Timeout) ->
+    [receive {Pid, Result} ->
+         Result
+     after Timeout ->
+         {error, timeout}
+     end || Pid <- Pids].
 
 position(List, Val) ->
     position(List, Val, 0).
@@ -56,7 +51,6 @@ position([_|T], Val, N) ->
     position(T,Val, N + 1);
 position([], _Val, _N) ->
     not_found.
-
 
 timestamp() ->
     calendar:datetime_to_gregorian_seconds(calendar:now_to_universal_time(now())).
