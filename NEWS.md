@@ -3,6 +3,12 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.1.1 - 20 Jun 2014
+---------------------------
+
+* Fix logging
+* Add pmap for going throw a list of funs
+
 Version 1.1.0 - 17 Sep 2013
 ---------------------------
 
