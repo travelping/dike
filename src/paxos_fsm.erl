@@ -26,9 +26,9 @@
 -export([nil/2, preparing/2, proposing/2, acceptor/2,
          learner/2, decided/2]).
 
--define( DEFAULT_TIMEOUT, timer:seconds(20)).
--define( DECIDED_TIMEOUT, 1).
--define( VALID_VOTE(StateData, S, N), StateData#paxos_fsm_state.subject == S, StateData#paxos_fsm_state.prepared_n > N).
+-define(DEFAULT_TIMEOUT, 50).
+-define(DECIDED_TIMEOUT, 1).
+-define(VALID_VOTE(StateData, S, N), StateData#paxos_fsm_state.subject == S, StateData#paxos_fsm_state.prepared_n > N).
 
 behaviour_info(callbacks) ->
     [{send, 3}, {broadcast, 3}, {callback, 2}];
@@ -66,10 +66,7 @@ start(S, InitN, V, Others, ReturnPids, Module, {_Module, _Proc} = DBAdapter, Mod
     {StateData, BroadcastMsg} = alter_state_for_mode(DefaultInitStateData, Mode),
 
     db_update(StateData),
-    {ok, Pid} = gen_fsm:start_link(
-		  ?MODULE,                        %Module
-		  [StateData, Mode],                %Args
-		  []),
+    {ok, Pid} = gen_fsm:start_link(?MODULE, [StateData, Mode], []),
     if BroadcastMsg =/= none ->
 	    broadcast(Others, StateData, BroadcastMsg);
        true ->
@@ -91,24 +88,14 @@ stop(S) ->
 get_result(S)->
     gen_fsm:sync_send_all_state_event( generate_global_address( node(),S ), result).
 
-
 %% ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ %%
 %%   codes below are for gen_fsm. users don't need.       %%
 %% ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ %%
 
 init([StateData, Mode])->
-    F=fun(passive) ->
-	      nil;
-	 (active) ->
-	      preparing
-      end,
+    Timeout = application:get_env(dike, paxos_timeout, ?DEFAULT_TIMEOUT),
     process_flag(trap_exit, true),
-    {ok,
-     F(Mode),
-     StateData,
-     ?DEFAULT_TIMEOUT};
-init(V) ->
-    lager:info([{class, dike}], "in wrong init...!!!! -> ~p", [V]).
+    {ok, mode2state(Mode), StateData#paxos_fsm_state{timeout = Timeout}, Timeout}.
 
 broadcast(Others, #paxos_fsm_state{subject=S, coordinator_module=Mod}, Message)->
     Mod:broadcast(Others, S, Message).
@@ -126,6 +113,8 @@ get_next_n( PN , All , InitN) -> (( PN div All )+1) * All + InitN.
 generate_global_address( Node, Subject )->  {global, {?MODULE, Node, Subject}}.
 %%generate_local_address( Node, Subject )->  {local, {?MODULE, Node, Subject}}.
 
+mode2state(passive) -> nil;
+mode2state(active)  -> preparing.
 
     %% =========================================
 %% states:
@@ -174,7 +163,7 @@ nil( timeout, StateData )->
 
 nil(UnknownEvent, StateData)-> % ignore
     lager:debug([{class, dike}],  "unknown event: ~p : all ignored.", [{UnknownEvent, StateData}] ),
-    {next_state, nil, StateData, ?DEFAULT_TIMEOUT}.
+    {next_state, nil, StateData, StateData#paxos_fsm_state.timeout}.
 
 
 %% =========================================
@@ -194,9 +183,7 @@ preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
     broadcast( StateData#paxos_fsm_state.others, StateData, {propose, {S, PN, NV, node()}} ),
 						%           lager:info([{class, dike}], "proposing ~p...", [{propose, {S,Nc,Vc,node()}}]),
     db_update(StateData, {PN, StateData#paxos_fsm_state.n, V}),
-    {next_state, proposing, StateData#paxos_fsm_state{current=1, n=PN, value=NV}, ?DEFAULT_TIMEOUT};
-
-
+    {next_state, proposing, StateData#paxos_fsm_state{current=1, n=PN, value=NV}, StateData#paxos_fsm_state.timeout};
 
 preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
   when PN == StateData#paxos_fsm_state.prepared_n , S == StateData#paxos_fsm_state.subject  ->
@@ -206,7 +193,7 @@ preparing( {prepare_result,  {S, PN, {N, V}, _From}}, StateData )
 		  true ->
 		       {StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}
 	       end,
-    {next_state, preparing, StateData#paxos_fsm_state{current=Current+1, n=NN, value=NV}, ?DEFAULT_TIMEOUT};
+    {next_state, preparing, StateData#paxos_fsm_state{current=Current+1, n=NN, value=NV}, StateData#paxos_fsm_state.timeout};
 
 preparing( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
@@ -216,7 +203,7 @@ preparing( timeout, StateData)->
 
 preparing( _Event, StateData) ->
     lager:debug([{class, dike}], "received unhandled message while preparing: ~p", [{_Event, StateData}]),
-    {next_state, preparing, StateData, ?DEFAULT_TIMEOUT}.
+    {next_state, preparing, StateData, StateData#paxos_fsm_state.timeout}.
 
 %% =========================================
 %%  - proposing
@@ -228,7 +215,7 @@ proposing( {prepare,  {S, N, _V, From}},  StateData)
 proposing( {propose_result,  {S, N, _V, _From}}, StateData)
   when N==StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.quorum > StateData#paxos_fsm_state.current+1 , S == StateData#paxos_fsm_state.subject ->
     Current = StateData#paxos_fsm_state.current,
-    {next_state, proposing, StateData#paxos_fsm_state{current=Current+1}, ?DEFAULT_TIMEOUT };
+    {next_state, proposing, StateData#paxos_fsm_state{current=Current+1}, StateData#paxos_fsm_state.timeout };
 
 proposing( {propose_result,  {S, N, _V, _From}}, StateData)
   when N==StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.quorum < StateData#paxos_fsm_state.current+1 , S == StateData#paxos_fsm_state.subject ->
@@ -248,8 +235,7 @@ proposing( {prepare_result, {_S, N, _V, _From}}, StateData) when StateData#paxos
 
 proposing( _Event, StateData) ->
     lager:debug([{class, dike}], "received unhandled message while proposing: ~p", [{_Event, StateData}]),
-    {next_state, proposing, StateData, ?DEFAULT_TIMEOUT}.
-
+    {next_state, proposing, StateData, StateData#paxos_fsm_state.timeout}.
 
 %% =========================================
 %%  - acceptor
@@ -263,7 +249,7 @@ acceptor( {propose,  {S, N, V, From}},  StateData)
   when N == StateData#paxos_fsm_state.prepared_n, StateData#paxos_fsm_state.subject==S ->
     db_update(StateData, {N, N, V}),
     send( From, StateData, {propose_result , {S, N, [], node() }} ),
-    {next_state, learner, StateData#paxos_fsm_state{n=N, value=V, prepared_n=N}, ?DEFAULT_TIMEOUT};
+    {next_state, learner, StateData#paxos_fsm_state{n=N, value=V, prepared_n=N}, StateData#paxos_fsm_state.timeout};
 
 acceptor( {decide,  {S, _, _, _}} = Msg, StateData ) when  S==StateData#paxos_fsm_state.subject->
     decided_callback( StateData#paxos_fsm_state{}, Msg);
@@ -273,7 +259,7 @@ acceptor( timeout, StateData=#paxos_fsm_state{}) ->
 
 acceptor( _Event, StateData) ->
     lager:debug([{class, dike}], "acceptor unknown event: ~p~n" , [{_Event , StateData}]),
-    {next_state, acceptor, StateData, ?DEFAULT_TIMEOUT}.
+    {next_state, acceptor, StateData, StateData#paxos_fsm_state.timeout}.
 
 %% =========================================
 %%  - learner
@@ -290,7 +276,7 @@ learner( timeout, StateData=#paxos_fsm_state{}) ->
 
 learner( _Event, StateData )->
     lager:debug([{class, dike}], "learner unknown event: ~p ,~p~n" , [{_Event , StateData}]),
-    {next_state, learner, StateData, ?DEFAULT_TIMEOUT }.
+    {next_state, learner, StateData, StateData#paxos_fsm_state.timeout }.
 
 %% =========================================
 %%  - decided ( within master lease time )
@@ -326,7 +312,6 @@ decided_callback(StateData, {_CMD, {S, N, V, _From}})
     callback(StateData2, V, StateData2#paxos_fsm_state.return_pids ),
     {next_state, decided, StateData2, ?DECIDED_TIMEOUT}.
 
-
 code_change(_,_,_,_)->
     ok.
 
@@ -356,13 +341,12 @@ start_new_round(StateData) ->
     db_update(StateData, {NewN, StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}),
     S=StateData#paxos_fsm_state.subject,
     broadcast( StateData#paxos_fsm_state.others, StateData, {prepare, {S, NewN, ?UNDECIDED, node()}} ),
-    {next_state, preparing, StateData#paxos_fsm_state{current=1, prepared_n=NewN}, ?DEFAULT_TIMEOUT}.
+    {next_state, preparing, StateData#paxos_fsm_state{current=1, prepared_n=NewN}, StateData#paxos_fsm_state.timeout}.
 
 higher_round_started_go_acceptor( From, N,  StateData=#paxos_fsm_state{} ) ->
     db_update(StateData, {N, StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}),
     send( From, StateData, {prepare_result, {StateData#paxos_fsm_state.subject, N, {StateData#paxos_fsm_state.n, StateData#paxos_fsm_state.value}, node()}}),
-    {next_state, acceptor, StateData#paxos_fsm_state{prepared_n=N}, ?DEFAULT_TIMEOUT}.
-
+    {next_state, acceptor, StateData#paxos_fsm_state{prepared_n=N}, StateData#paxos_fsm_state.timeout}.
 
 db_update(StateData=#paxos_fsm_state{prepared_n=PN, n=N, value=V}) ->
     db_update(StateData, {PN, N, V}).

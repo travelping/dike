@@ -6,7 +6,8 @@
     {env, [
         {masters, ['test1@ws009-lx', 'test2@ws009-lx', 'test3@ws009-lx', 'test4@ws009-lx', 'test5@ws009-lx']},
         {db_adapter, dike_db_adapter_ets}, % db_adapters at the moment: dike_db_adapter_mdb (per_vm , per_group and (maybe on ssd) per_machine), dike_db_adapter_ets (per_group)
-        {db_dir, "/tmp/"}, 
-        {db_mode, per_group}
+        {db_dir, "/tmp/"},
+        {db_mode, per_group},
+        {paxos_timeout, 50}
     ]} %this must be either per_group, per_vm or per_machine
 ]}.

@@ -106,6 +106,8 @@ new_group(Node, Gname, PaxosServerModule, Nodes) ->
 	ok = gen_server:call({dike_dispatcher, Node}, {new_group, Gname, PaxosServerModule, Nodes})
     catch
 	_Error:_Reason ->
+        timer:sleep(1000),
+        lager:error("nodes connected: ~p~n", [[node() | nodes()]]),
 	    new_group(Node, Gname, PaxosServerModule, Nodes)
     end.
 

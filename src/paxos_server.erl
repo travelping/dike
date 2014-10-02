@@ -29,6 +29,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+%% share the code with stub_paxos
+-export([client_handle_call/5]).
+
 behaviour_info(callbacks) ->
     [{handle_call, 3},
      {init, 1},
@@ -247,32 +250,7 @@ handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{modu
 	      true ->
 		   SLP
 	   end,
-    CS2 = try
-	      case Module:handle_call(Request, From, CState) of
-		  {reply, ReplyFN, CState2} ->
-		      if Mode == leader ->
-			      ErrorHelper = fun() -> try
-							 ReplyFN()
-						     catch
-							 Error:Reason ->
-							     lager:error([{class, dike}], "Error in application aftereffects~nRequest: ~p~nError: ~p", [Request, {Error, Reason, erlang:get_stacktrace()}])
-						     end
-					    end,
-			      catch spawn(ErrorHelper);
-			 true ->
-			      nothing
-		      end,
-		      CState2;
-		  {noreply, CState2} ->
-		      CState2;
-		  V ->
-		      CState
-	      end
-	  catch
-	      Class:Error ->
-		  lager:error([{class, dike}], "Error in application transition~nRequest: ~p~nError: ~p", [Request, {Class, Error, erlang:get_stacktrace()}]),
-		  CState
-	  end,
+    CS2 = client_handle_call(Module, Request, From, CState, Mode),
     {reply, ok, State#state{client_state=CS2, state_log_pos=SLP2}};
 
 handle_call(_Msg, _From, State) ->
@@ -299,6 +277,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+client_handle_call(Module, Request, From, CState, Mode) ->
+    try Module:handle_call(Request, From, CState) of
+        {reply, ReplyFN, CState2} ->
+            (Mode == leader) andalso proc_lib:spawn(fun() -> client_reply(Request, ReplyFN) end),
+            CState2;
+        {noreply, CState2} ->
+            CState2;
+        V ->
+            lager:warning([{class, dike}], "Application returned unsupported value: ~p~n", [V]),
+            CState
+    catch
+        Class:Error ->
+            lager:error([{class, dike}], "Error in application transition~nRequest: ~p~nError: ~p~nStacktrace: ~p~n", [Request, {Class, Error}, erlang:get_stacktrace()]),
+            (Mode == leader) andalso paxos_server:reply(From, {error, client_application_error}),
+            CState
+    end.
+
+client_reply(Request, ReplyFN) ->
+    try
+        ReplyFN()
+    catch
+        Error:Reason ->
+            lager:error([{class, dike}], "Error in application aftereffects~nRequest: ~p~nError: ~p~nStacktrace: ~p~n", [Request, {Error, Reason}, erlang:get_stacktrace()])
+    end.
 
 generate_paxos_server_name(PaxosGroup, Module) ->
     list_to_atom("$paxos_server$-" ++ atom_to_list(PaxosGroup) ++ "-" ++ atom_to_list(Module)).

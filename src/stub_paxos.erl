@@ -49,33 +49,11 @@ init([Gname, PaxosServerModule]) ->
 		paxos_server_state=InitialState}}.
 
 handle_call({append, V}, From, State = #state{paxos_server_mod=PSM, paxos_server_state=PSS}) ->
-    try
-	NewPSS = case PSM:handle_call(V, {single_node_reply, From}, PSS) of
-		     {reply, ReplyFN, PSS2} ->
-			 ErrorHelper = fun() -> try
-						    ReplyFN()
-						catch
-						    Error:Reason ->
-							lager:error([{class, dike}], "Error in application aftereffects~nRequest: ~p~nError: ~p", [V, {Error, Reason, erlang:get_stacktrace()}])
-						end
-				       end,
-			 catch spawn(ErrorHelper),
-			 PSS2;
-		     {noreply, PSS2} ->
-			 PSS2;
-		     V ->
-			 PSS
-		 end,
-	{noreply, State#state{paxos_server_state=NewPSS}}
-    catch
-	Class:Error ->
-	    lager:error([{class, dike}], "Error in application transition~nRequest: ~p~nError: ~p", [V, {Class, Error, erlang:get_stacktrace()}]),
-	    {reply, {error, client_application_error}, State}
-    end;
+    NewPSM = paxos_server:client_handle_call(PSM, V, {single_node_reply, From}, PSS, leader),
+    {noreply, State#state{paxos_server_state = NewPSM}};
 
 handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.

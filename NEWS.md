@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.1.2 - 20 Jun 2014
+---------------------------
+
+* add timeout to not overload a CPU
+
 Version 1.1.1 - 20 Jun 2014
 ---------------------------
 
