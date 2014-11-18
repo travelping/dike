@@ -11,7 +11,7 @@
 
 -behaviour(gen_fsm).
 
--include_lib("include/paxos_lib.hrl").
+-include("paxos_lib.hrl").
 
 -export([version_info/0]).
 
