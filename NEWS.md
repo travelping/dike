@@ -3,6 +3,12 @@ dike
 
 A framework for distributed computing and storage.
 
+
+Version 1.2.1 - 27 Nov 2014
+---------------------------
+
+* garbage collect in gen_paxos and paxos_server processes in intervals defined by garbage_collect_interval
+
 Version 1.2.0 - 26 Nov 2014
 ---------------------------
 

@@ -246,8 +246,10 @@ handle_call(stop, _From, State) ->
 
 handle_call({paxos_update, From, IncLC, Request, Mode}, _From, State=#state{module=Module, client_state=CState, state_log_pos=SLP}) ->
     SLP2 = if IncLC > SLP -> %% this is because rounds to control the group topology may interrupt a straight linear order
+                   dike_lib:maybe_garbage_collect(SLP, IncLC),
 		   IncLC;
 	      true ->
+                   dike_lib:maybe_garbage_collect(SLP),
 		   SLP
 	   end,
     CS2 = client_handle_call(Module, Request, From, CState, Mode),

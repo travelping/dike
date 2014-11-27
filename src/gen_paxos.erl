@@ -569,6 +569,8 @@ update_log_complete(State=#state{log_complete=LC,
 				 db_adapter={DBMod, DBProc}
 				}) when LC < I ->
     IncLC = LC + 1,
+    dike_lib:maybe_garbage_collect(IncLC),
+
     DecidedVal = DBMod:get(DBProc, generate_subject(State, IncLC)),
 
     case ets:lookup(Calls, IncLC) of

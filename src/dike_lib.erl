@@ -13,7 +13,7 @@
 -include_lib("../include/dike.hrl").
 
 -compile(export_all).
--define(DEFAULT_TIMEOUT, 300000).
+-define(DEFAULT_TIMEOUT, timer:minutes(5)).
 
 %% Parrallel Map
 pmap(FList) ->
@@ -87,3 +87,21 @@ replace_nth([], _N, _V) ->
 
 get_group_coordinator_name(GroupName) ->
     list_to_atom(atom_to_list(?COORDINATOR_TAG) ++ atom_to_list(GroupName) ).
+
+maybe_garbage_collect(Index) ->
+        {ok, GCInterval} = application:get_env(dike, garbage_collect_interval),
+    case Index rem GCInterval of
+        0 -> erlang:garbage_collect();
+        _ -> ok
+    end.
+
+maybe_garbage_collect(Index, NextIndex) ->
+    {ok, GCInterval} = application:get_env(dike, garbage_collect_interval),
+    IndexRemainder = Index rem GCInterval,
+    CrossingCollectionLine = NextIndex - Index + IndexRemainder,
+    if IndexRemainder == 0 ->
+            erlang:garbage_collect();
+       CrossingCollectionLine > GCInterval ->
+            erlang:garbage_collect();
+       true -> ok
+    end.
