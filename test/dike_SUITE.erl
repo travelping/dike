@@ -23,33 +23,41 @@ init_per_suite(Config) ->
     application:load(dike),
     application:set_env(dike, masters, TestVMS2),
     Nodes = nodes_start(TestVMS ++ ClientVMS),
-    add_test_code_path(Nodes),    
+    add_test_code_path(Nodes),
     timer:sleep(1000),
     [{clients, ClientVMS} | [{nodes, TestVMS2} | Config]].
 
 end_per_suite(Config) ->
     _Nodes = proplists:get_value(nodes, Config),
 						%    appstop(dike),
-    [{ok, _} = ct_slave:stop(Host, Node) || 
-	{Node, Host} <- [split_hostname(FullName) || 
+    [{ok, _} = ct_slave:stop(Host, Node) ||
+	{Node, Host} <- [split_hostname(FullName) ||
 			    FullName <- names()]],
     ok = net_kernel:stop().
 
-init_per_testcase(_TestCase, Config) ->
-    Clients = proplists:get_value(clients, Config),
-    Masters = proplists:get_value(nodes, Config),
-    ClientNodes =  Masters ++ Clients,
-    AllNodes = ClientNodes ++ [node()],
-    lager:debug("setting masters on ~p to ~p~n", [AllNodes, Masters]),
-    [rpc:call(Node, application, set_env, [dike, masters, Masters]) || Node <- AllNodes],    
-    timer:sleep(5000),
-    [rpc:call(Node, application, start, [sasl_syslog]) || Node <- ClientNodes],    
-    lager:debug("started sasl_syslog~n", []),
-    [rpc:call(SlaveNode, dike, start, []) || SlaveNode <- AllNodes],
-    lager:debug("started dike~n", []),
-    ensure_loaded(dike, AllNodes),
-    timer:sleep(1000),
-    Config.
+init_per_testcase(TestCase, Config) ->
+    case {TestCase, application:load(emdb)} of
+        {dike_db_adapter_mdb, {error, {"no such file or directory", _}}} ->
+            {skip, emdb_not_installed};
+        _ ->
+            Clients = proplists:get_value(clients, Config),
+            Masters = proplists:get_value(nodes, Config),
+            ClientNodes =  Masters ++ Clients,
+            AllNodes = ClientNodes ++ [node()],
+
+            start_lager(AllNodes),
+
+            lager:info("setting masters on ~p to ~p~n", [AllNodes, Masters]),
+            [rpc:call(Node, application, set_env, [dike, masters, Masters]) || Node <- AllNodes],
+            timer:sleep(5000),
+            [rpc:call(Node, application, start, [sasl_syslog]) || Node <- ClientNodes],
+            lager:info("started sasl_syslog~n", []),
+            [rpc:call(SlaveNode, dike, start, []) || SlaveNode <- AllNodes],
+            lager:info("started dike~n", []),
+            ensure_loaded(dike, AllNodes),
+            timer:sleep(5000),
+            Config
+    end.
 
 end_per_testcase(_TestCase, Config) ->
     [rpc:call(SlaveNode, application, stop, [dike]) || SlaveNode <- proplists:get_value(clients, Config) ++ names()],
@@ -58,14 +66,14 @@ end_per_testcase(_TestCase, Config) ->
 all(doc) ->
     ["Describe the main purpose of this suite"];
 
-all(suite) -> 
+all(suite) ->
     [ensure_dike_started].
 
 all() ->
-    [dike_db_adapter_mdb, 
+    [dike_db_adapter_mdb,
      dike_db_adapter_ets,
      ensure_dike_started,
-     master_election, 
+     master_election,
      hashring].
 
 %%--------------------------------------------------------------------
@@ -106,13 +114,13 @@ dike_db_adapter_helper(Config, DBMod) when is_list(Config) ->
 					    {T, {ok, testval}} = timer:tc(DBMod, get, [Adapter, {'vnode-1', K}]),
 					    T
 				    end),
-    DBMod:bulk_delete(Adapter,[{'vnode-1', N} ||  N <- lists:seq(1,ParNum - 1)]), 
+    DBMod:bulk_delete(Adapter,[{'vnode-1', N} ||  N <- lists:seq(1,ParNum - 1)]),
     {error, undefined} = DBMod:get(Adapter, {'vnode-1', 1}),
     {error, undefined} = DBMod:get(Adapter, {'vnode-1', ParNum - 1}),
     {ok, testval} = DBMod:get(Adapter, {'vnode-1', ParNum}).
 
 db_adapter_par_requests(N, Fun) ->
-    timer:tc(dike_lib, pmap, [Fun,			      
+    timer:tc(dike_lib, pmap, [Fun,
 			      lists:seq(1,N)]).
 
 
@@ -139,7 +147,7 @@ master_election(Config) when is_list(Config) ->
     lager:debug("tested arithmetic~n", []),
     NodesWithPaxosServers = dike_dispatcher:get_nodes(arithmetic_1),
     5 = length(NodesWithPaxosServers),
-    
+
     timer:sleep(5000),
     ok = gen_paxos:lock_log_complete(hd(NodesWithPaxosServers), arithmetic_1),
     arithmetic_paxos:send_operation(lists:last(NodesWithPaxosServers), arithmetic_1, {'div', 3}),
@@ -147,7 +155,7 @@ master_election(Config) when is_list(Config) ->
     ok = gen_paxos:unlock_log_complete(hd(NodesWithPaxosServers), arithmetic_1),
 
     CmpVal = paxos_server:call(hd(NodesWithPaxosServers), arithmetic_1, read),
-    {NodesToStop, _} = lists:split(2, NodesWithPaxosServers), 
+    {NodesToStop, _} = lists:split(2, NodesWithPaxosServers),
     timer:sleep(2000),
     H13 = rpc:call(lists:last(NodesWithPaxosServers), dike_dispatcher, check_remote_group, [arithmetic_1, arithmetic_paxos]),
     lager:debug("checked remote group: ~p~n", [H13]),
@@ -170,7 +178,7 @@ hashring(Config) ->
     lager:debug("hashring-test: first round of messages done, adding node ~p~n", [H]),
     dike_master:join(H),
     [NodeToRestart | Rest] = T,
-    dike_dispatcher:refresh_routing_table(),    
+    dike_dispatcher:refresh_routing_table(),
 
     lager:debug("restarting one node~n", []),
     rpc:call(NodeToRestart, dike, stop, []),
@@ -210,45 +218,45 @@ start_and_test_arithmetic(PaxosGroupName) ->
     lager:debug("started arithmetic_paxos for group ~p, participating nodes: ~p~n", [PaxosGroupName, ArithNodes]),
     [dike_lib:pmap(fun(Node) ->
 			   random:seed(now()),
-			   
+
 			   dike_dispatcher:request(PaxosGroupName, {arithmetic_paxos:random_operation(), random:uniform(200) - 100})
-		   end, 
+		   end,
 		   ArithNodes) || _V <- lists:seq(1,100)], %% issuing operations to the every member of the new paxos_group (always 5 in parallel)
     [H|T] = [paxos_server:call(Node, PaxosGroupName, read) || Node <- ArithNodes],
-    [H=V || V <- T], %% making sure consistency has prevailed 
-    [H|T].    
+    [H=V || V <- T], %% making sure consistency has prevailed
+    [H|T].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% utility functions                               %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-nodes_start([H | T] = NodeNames) -> 
+nodes_start([H | T] = NodeNames) ->
     os:cmd("epmd &"),
-    timer:sleep(1000), 
+    timer:sleep(1000),
     net_kernel:start([coordinator, shortnames]),
-    
-    Fun = fun(NodeName) -> 
+
+    Fun = fun(NodeName) ->
 		  {Node, Host} = split_hostname(NodeName),
-		  case ct_slave:start(Host, Node, [{monitor_master, true}]) of 
+		  case ct_slave:start(Host, Node, [{monitor_master, true}]) of
 		      {error, started_not_connected, SlaveNode} ->
 			  error_logger:error_report([started_not_connected, {node,
-									     SlaveNode}]), net_adm:ping(SlaveNode), SlaveNode; 
+									     SlaveNode}]), net_adm:ping(SlaveNode), SlaveNode;
 		      {error, already_started, SlaveNode} ->
 			  error_logger:error_report([already_started, {node, SlaveNode}]),
-			  net_adm:ping(SlaveNode), SlaveNode; 
+			  net_adm:ping(SlaveNode), SlaveNode;
 		      {ok, SlaveNode} ->
 			  error_logger:info_msg("started a slavenode: ~p~n", [SlaveNode]),
-			  SlaveNode; 
+			  SlaveNode;
 		      Result ->
 			  error_logger:error_report([cannot_start_slave_node, {reason,
-									       Result}]), 
-			  exit(no_slave_node) 
-		  end 
+									       Result}]),
+			  exit(no_slave_node)
+		  end
 	  end,
     RetVal = lists:map(Fun, NodeNames),
     RetVal.
 
-add_test_code_path(SlaveNodes) ->   
+add_test_code_path(SlaveNodes) ->
     {ok, Cwd} = file:get_cwd(),
     ListOfStrings = string:tokens(Cwd, "/"),
     [_Skip1, _Skip2 | ReversedList ] = lists:reverse(ListOfStrings),
@@ -263,12 +271,12 @@ add_test_code_path(SlaveNodes) ->
     case filelib:is_dir(TestCodeDir) of
 	true ->
 	    lists:foreach(AddpathFun, SlaveNodes);
-	false ->            
+	false ->
 	    exit({not_dir, TestCodeDir})
     end.
 
 
-ensure_loaded(Module, Nodes) ->    
+ensure_loaded(Module, Nodes) ->
     EnsureLoaded = fun(Node) ->
 			   rpc:call(Node, code, ensure_loaded, [Module])
 		   end,

@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.2.0 - 26 Nov 2014
+---------------------------
+
+* cleanup, make dike publicly accessible
+
 Version 1.1.2 - 20 Jun 2014
 ---------------------------
 
