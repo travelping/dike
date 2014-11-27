@@ -13,27 +13,24 @@
 
 -include_lib("../include/dike.hrl").
 
+-define(LOG_LEVEL, debug).
+-define(LOG_FILE, "/log/console.log").
+
 init_per_suite(Config) ->
-    crypto:start(),
-    lager:start(),
-    {ok, MyHostname} = inet:gethostname(),
-    TestVMS = [list_to_atom("test" ++ integer_to_list(I) ++ "@" ++ MyHostname) || I <- lists:seq(1,5)],
+    {ok, CWD} = file:get_cwd(),
+    error_logger:info_msg("Logging through lager, see ~p~n", [CWD ++ ?LOG_FILE]),
+    dike_test:start_lager(?LOG_LEVEL),
+    dike_test:init_self("coordinator"),
+    TestVMS = dike_test:nodes_slave_init("test", 5, ?LOG_LEVEL),
+    dike_test:nodes_set_dike_masters(TestVMS),
     TestVMS2 = TestVMS,%[list_to_atom("coordinator@" ++ MyHostname) |TestVMS],
-    ClientVMS = [list_to_atom("non_master" ++ integer_to_list(I) ++ "@" ++ MyHostname) || I <- lists:seq(1,6)],
-    application:load(dike),
-    application:set_env(dike, masters, TestVMS2),
-    Nodes = nodes_start(TestVMS ++ ClientVMS),
-    add_test_code_path(Nodes),
+    ClientVMS = dike_test:nodes_slave_init("non_master", 6, ?LOG_LEVEL),
     timer:sleep(1000),
     [{clients, ClientVMS} | [{nodes, TestVMS2} | Config]].
 
 end_per_suite(Config) ->
     _Nodes = proplists:get_value(nodes, Config),
-						%    appstop(dike),
-    [{ok, _} = ct_slave:stop(Host, Node) ||
-	{Node, Host} <- [split_hostname(FullName) ||
-			    FullName <- names()]],
-    ok = net_kernel:stop().
+    dike_test:stop_nodes(names()).
 
 init_per_testcase(TestCase, Config) ->
     case {TestCase, application:load(emdb)} of
@@ -45,13 +42,9 @@ init_per_testcase(TestCase, Config) ->
             ClientNodes =  Masters ++ Clients,
             AllNodes = ClientNodes ++ [node()],
 
-            start_lager(AllNodes),
-
             lager:info("setting masters on ~p to ~p~n", [AllNodes, Masters]),
             [rpc:call(Node, application, set_env, [dike, masters, Masters]) || Node <- AllNodes],
             timer:sleep(5000),
-            [rpc:call(Node, application, start, [sasl_syslog]) || Node <- ClientNodes],
-            lager:info("started sasl_syslog~n", []),
             [rpc:call(SlaveNode, dike, start, []) || SlaveNode <- AllNodes],
             lager:info("started dike~n", []),
             ensure_loaded(dike, AllNodes),
@@ -98,7 +91,6 @@ dike_db_adapter_ets(suite) ->
 dike_db_adapter_ets(Config) ->
     dike_db_adapter_helper(Config, dike_db_adapter_ets).
 
-
 dike_db_adapter_helper(Config, DBMod) when is_list(Config) ->
     ParNum=10000,
     {ok, Adapter} = DBMod:open("./db_adapter_test_mdb"),
@@ -122,7 +114,6 @@ dike_db_adapter_helper(Config, DBMod) when is_list(Config) ->
 db_adapter_par_requests(N, Fun) ->
     timer:tc(dike_lib, pmap, [Fun,
 			      lists:seq(1,N)]).
-
 
 ensure_dike_started() ->
     [{timetrap, {minutes, 5}}].
@@ -177,7 +168,7 @@ hashring(Config) ->
     requests_to_hashring(50, 100),
     lager:debug("hashring-test: first round of messages done, adding node ~p~n", [H]),
     dike_master:join(H),
-    [NodeToRestart | Rest] = T,
+    [NodeToRestart | _Rest] = T,
     dike_dispatcher:refresh_routing_table(),
 
     lager:debug("restarting one node~n", []),
@@ -202,11 +193,8 @@ hashring(Config) ->
 
 requests_to_hashring(Par, Seq) ->
     dike_lib:pmap(fun(_) -> random:seed(now()),
-			    Helper = fun(I) ->
-%					     lager:debug("sending request ~p~n", [I]),
-					     paxos_hashring:send(random:uniform(5000), {arithmetic_paxos:random_operation(), random:uniform(200) - 100})
-				     end,
 			    [Helper(I) || I <- lists:seq(1,Seq)]
+			              [paxos_hashring:send(random:uniform(5000), {arithmetic_paxos:random_operation(), random:uniform(200) - 100}) || I <- lists:seq(1,Seq)]
 		  end,
 		  lists:seq(1,Par)).
 
@@ -218,7 +206,6 @@ start_and_test_arithmetic(PaxosGroupName) ->
     lager:debug("started arithmetic_paxos for group ~p, participating nodes: ~p~n", [PaxosGroupName, ArithNodes]),
     [dike_lib:pmap(fun(Node) ->
 			   random:seed(now()),
-
 			   dike_dispatcher:request(PaxosGroupName, {arithmetic_paxos:random_operation(), random:uniform(200) - 100})
 		   end,
 		   ArithNodes) || _V <- lists:seq(1,100)], %% issuing operations to the every member of the new paxos_group (always 5 in parallel)
@@ -230,58 +217,11 @@ start_and_test_arithmetic(PaxosGroupName) ->
 %% utility functions                               %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-nodes_start([H | T] = NodeNames) ->
-    os:cmd("epmd &"),
-    timer:sleep(1000),
-    net_kernel:start([coordinator, shortnames]),
-
-    Fun = fun(NodeName) ->
-		  {Node, Host} = split_hostname(NodeName),
-		  case ct_slave:start(Host, Node, [{monitor_master, true}]) of
-		      {error, started_not_connected, SlaveNode} ->
-			  error_logger:error_report([started_not_connected, {node,
-									     SlaveNode}]), net_adm:ping(SlaveNode), SlaveNode;
-		      {error, already_started, SlaveNode} ->
-			  error_logger:error_report([already_started, {node, SlaveNode}]),
-			  net_adm:ping(SlaveNode), SlaveNode;
-		      {ok, SlaveNode} ->
-			  error_logger:info_msg("started a slavenode: ~p~n", [SlaveNode]),
-			  SlaveNode;
-		      Result ->
-			  error_logger:error_report([cannot_start_slave_node, {reason,
-									       Result}]),
-			  exit(no_slave_node)
-		  end
-	  end,
-    RetVal = lists:map(Fun, NodeNames),
-    RetVal.
-
-add_test_code_path(SlaveNodes) ->
-    {ok, Cwd} = file:get_cwd(),
-    ListOfStrings = string:tokens(Cwd, "/"),
-    [_Skip1, _Skip2 | ReversedList ] = lists:reverse(ListOfStrings),
-    ProjectPath = lists:foldr(fun(Name, Acc) ->
-					  Acc ++ "/" ++ Name end, "", ReversedList),
-    TestCodeDir = filename:join([ProjectPath ++ "/",  "test"]),
-    Dirs = [TestCodeDir, ProjectPath, ProjectPath ++ "/ebin"],
-    AddpathFun = fun(SlaveNode) ->
-			 [rpc:call(SlaveNode, code, add_patha, [Dir])
-			  || Dir <- Dirs]
-		 end,
-    case filelib:is_dir(TestCodeDir) of
-	true ->
-	    lists:foreach(AddpathFun, SlaveNodes);
-	false ->
-	    exit({not_dir, TestCodeDir})
-    end.
-
-
 ensure_loaded(Module, Nodes) ->
     EnsureLoaded = fun(Node) ->
 			   rpc:call(Node, code, ensure_loaded, [Module])
 		   end,
     [{module, Module} = EnsureLoaded(Node) || Node <- Nodes].
-
 
 appstop(Module) ->
     [rpc:call(Node, Module, stop, []) || Node <- names()],
@@ -290,7 +230,3 @@ appstop(Module) ->
 names() ->
     {ok, MasterNodes} = application:get_env(dike, masters),
     MasterNodes.
-
-split_hostname(HN) ->
-    [Node, Host] = [list_to_atom(binary_to_list(X)) || X <- re:split(atom_to_list(HN), "@")],
-    {Node, Host}.

@@ -3,6 +3,13 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.2.2 - 27 Nov 2014
+---------------------------
+
+* add generic helpers for building a test cases with dike-based applications (dike_test)
+* use dike_test in dike_SUITE
+* add lager logging for test-nodes
+* remove sasl_syslog dependency
 
 Version 1.2.1 - 27 Nov 2014
 ---------------------------
