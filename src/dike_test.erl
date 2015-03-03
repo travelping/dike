@@ -87,8 +87,7 @@ add_test_code_path(SlaveNodes) ->
         true ->
             [{_, []} = rpc:multicall(SlaveNodes, code, add_patha, [Dir]) || Dir <- Dirs];
         false ->
-            lager:error("not a directory ~p", [TestCodeDir]),
-            throw({not_a_dir, TestCodeDir})
+            lager:error("not a directory ~p", [TestCodeDir])
     end.
 
 node_names(App, N) ->

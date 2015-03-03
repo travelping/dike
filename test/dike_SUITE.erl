@@ -10,6 +10,7 @@
 -module(dike_SUITE).
 
 -compile(export_all).
+-compile([{parse_transform, lager_transform}]).
 
 -include_lib("../include/dike.hrl").
 
@@ -193,7 +194,6 @@ hashring(Config) ->
 
 requests_to_hashring(Par, Seq) ->
     dike_lib:pmap(fun(_) -> random:seed(now()),
-			    [Helper(I) || I <- lists:seq(1,Seq)]
 			              [paxos_hashring:send(random:uniform(5000), {arithmetic_paxos:random_operation(), random:uniform(200) - 100}) || I <- lists:seq(1,Seq)]
 		  end,
 		  lists:seq(1,Par)).

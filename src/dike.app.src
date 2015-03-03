@@ -1,6 +1,7 @@
 {application, dike, [
     {description, "A framework for distributed data-storing and -processing."},
     {mod, {dike, []}},
+    {vsn, git},
     {applications, [kernel, stdlib, lager, regine]},
     {registered, []},
     {env, [
