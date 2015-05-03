@@ -147,8 +147,8 @@ new_group(Node, Gname, PaxosServerModule, Nodes) ->
 	ok = gen_server:call({dike_dispatcher, Node}, {new_group, Gname, PaxosServerModule, Nodes})
     catch
 	_Error:_Reason ->
-        timer:sleep(1000),
-        lager:error("nodes connected: ~p~n", [[node() | nodes()]]),
+            timer:sleep(1000),
+            lager:error("nodes connected: ~p~n", [[node() | nodes()]]),
 	    new_group(Node, Gname, PaxosServerModule, Nodes)
     end.
 
@@ -195,10 +195,10 @@ handle_call({new_group, Gname, PaxosServerModule, Nodes}, _From, State=#state{lo
 		   {pang, pang} ->
 		       %%the dispatcher found the routingtable before being informed about starting this group....
 		       ets:insert(?TABLE, #routing_table_entry{group_name=Gname,
-								     nodes=Nodes,
-								     module=PaxosServerModule}),
-		       exit(whereis(dike_lib:get_group_coordinator_name(Gname)), normal),
-		       exit(whereis(paxos_server:generate_paxos_server_name(Gname, PaxosServerModule)), normal),
+                                                               nodes=Nodes,
+                                                               module=PaxosServerModule}),
+		       catch exit(whereis(dike_lib:get_group_coordinator_name(Gname)), normal),
+		       catch exit(whereis(paxos_server:generate_paxos_server_name(Gname, PaxosServerModule)), normal),
 		       gen_paxos:start_link_with_subscriber(Gname, PaxosServerModule, Nodes),
 		       State;
 		   _ ->
