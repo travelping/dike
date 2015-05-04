@@ -13,6 +13,7 @@
 -compile([{parse_transform, lager_transform}]).
 
 -include_lib("../include/dike.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(LOG_LEVEL, debug).
 -define(LOG_FILE, "/log/console.log").
@@ -55,6 +56,7 @@ init_per_testcase(TestCase, Config) ->
 
 end_per_testcase(_TestCase, Config) ->
     [rpc:call(SlaveNode, application, stop, [dike]) || SlaveNode <- proplists:get_value(clients, Config) ++ names()],
+    dike_dispatcher:refresh_routing_table(),
     ok.
 
 all(doc) ->
@@ -68,7 +70,9 @@ all() ->
      dike_db_adapter_ets,
      ensure_dike_started,
      master_election,
-     hashring].
+     hashring,
+     node_cover
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASES
@@ -191,6 +195,20 @@ hashring(Config) ->
     RV = paxos_hashring:check_consistency(),
     lager:debug("checked consistency again after casting~n", []),
     RV.
+
+node_cover(Config) ->
+    #{} = dike_dispatcher:find_group_cover(),
+
+    Clients = proplists:get_value(clients, Config),
+    [H|T] = Clients,
+    [dike_master:join(Node) || Node <- Clients], %%adding new nodes to the dike
+    paxos_hashring:start(),
+
+    dike_dispatcher:refresh_routing_table(),
+    Cover = dike_dispatcher:find_group_cover(),
+    GroupCount = paxos_hashring:get_group_count(),
+    ?assertEqual(GroupCount, length(lists:usort(lists:flatten(maps:values(Cover))))),
+    Cover.
 
 requests_to_hashring(Par, Seq) ->
     dike_lib:pmap(fun(_) -> random:seed(now()),

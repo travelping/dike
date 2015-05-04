@@ -14,7 +14,9 @@
 
 %% API
 -export([start_link/1,
-	 get_nodes/1,
+	 get_nodes/1, get_nodes/2,
+         find_group_cover/0, find_group_cover/1,
+         dirty_broadcast/4,
 	 request/2,
 	 request/3,
 	 cast/2,
@@ -54,15 +56,54 @@ get_nodes(PGroup, N) ->
         [#routing_table_entry{group_name=PGroup, nodes=RVal}]  ->
             RVal;
         _ ->
-            get_nodes_refresh(PGroup, N - 1)
+            refresh_recall(get_nodes, [PGroup], N - 1)
     end.
 
-get_nodes_refresh(_PGroup, 0) ->
+dirty_broadcast(GroupCover, M, F, A) ->
+    dike_lib:pmap(
+      [fun() -> rpc:call(Node, M, F, [Groups | A]) end || {Node, Groups} <- maps:to_list(GroupCover)]).
+
+%% calculates a map #{Vnode => [Groups]} 
+find_group_cover() ->
+    find_group_cover(2).
+find_group_cover(N) ->
+    try
+        {AllGroups, NodeGroups} =
+            ets:foldl(fun(#routing_table_entry{group_name=GroupName, nodes=Nodes}, {Groups, NodeGroups}) ->
+                              NewNodeGroups =
+                                  lists:foldl(fun(Node, Acc) -> OldNodeGroups = maps:get(Node, Acc, []),
+                                                                maps:put(Node, [GroupName | OldNodeGroups], Acc)
+                                              end, NodeGroups, Nodes),
+                              {[GroupName | Groups], NewNodeGroups}
+                      end,
+                      {[], #{}}, ?TABLE),
+        find_group_cover(AllGroups, NodeGroups, #{})
+    catch _:_ ->
+            refresh_recall(find_group_cover, [], N - 1)
+    end.
+
+%% will not find the best cover in all situations
+find_group_cover([], _, TotalCover) -> TotalCover;
+find_group_cover(RemainingGroups, NodeGroups, Cover) ->
+    {Node, Groups} = %% Find best covering node
+        maps:fold(fun(Node, Groups, {_, AccGroups} = Acc) ->
+                          case length(Groups) > length(AccGroups) of
+                              true -> {Node, Groups};
+                              _    -> Acc
+                          end end,
+                  {undefined, []}, NodeGroups),
+    %% remove covered groups from termination condition
+    NewRemainingGroups = lists:foldl(fun lists:delete/2, RemainingGroups, Groups),
+    %% delete selected node, remove selected Groups from all other nodes
+    NewNodeGroups = maps:map(fun(_, OldGroups) -> lists:foldl(fun lists:delete/2, OldGroups, Groups) end, maps:remove(Node, NodeGroups)),
+    find_group_cover(NewRemainingGroups, NewNodeGroups, maps:put(Node, Groups, Cover)).
+
+refresh_recall(_Fun, _Params, 0) ->
     {error, not_found};
-get_nodes_refresh(PGroup, N) ->
+refresh_recall(Fun, Params, N) ->
     timer:sleep(500),
     catch refresh_routing_table(), %% well this is desperate - but works :)
-    get_nodes(PGroup, N).
+    apply(?MODULE, Fun, Params ++  [N]).
 
 refresh_routing_table() ->
     gen_server:call(?MODULE, refresh_routing_table, 20000).

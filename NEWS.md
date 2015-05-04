@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.3.0 - 25 Mar 2015
+---------------------------
+
+* add dike_dispatcher:get_min_node_set_all_groups/0 to find a small cover of all groups in the hashring (for efficient broadcasting)
+
 Version 1.2.2 - 27 Nov 2014
 ---------------------------
 

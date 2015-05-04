@@ -4,7 +4,8 @@
 -export([start/0,
 	 send/2,
 	 cast/2,
-	 check_consistency/0]).
+	 check_consistency/0,
+         get_group_count/0]).
 
 -define(GROUP_COUNT, 16).
 
@@ -28,6 +29,8 @@ check_consistency() ->
 		       generate_paxos_groups()),
     [true=dike_lib:uniform_list(ReadValueRow) || ReadValueRow <- RetVal],
     RetVal.
+
+get_group_count() -> ?GROUP_COUNT.
 
 generate_paxos_groups() ->
     [list_to_atom("vnode-" ++ integer_to_list(I)) || I <- lists:seq(1, ?GROUP_COUNT)].
