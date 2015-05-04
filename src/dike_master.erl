@@ -33,7 +33,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link(Group) ->
-    gen_paxos:start_link_with_subscriber(master, ?MODULE, Group).
+    if length(Group) > 1 ->
+            NodesToCheck = trunc(length(Group) / 2),
+            OtherMembers = Group -- [node()],
+            {MembersToCheck, _} = lists:split(NodesToCheck, OtherMembers),
+            MembersToCheckResults0 = dike_lib:pmap(fun(NodeToCheck) -> gen_paxos:get_log_cut(NodeToCheck, master) end, MembersToCheck),
+            MembersToCheckResults = lists:zip(MembersToCheckResults0, MembersToCheck),
+            case [Node || {{ok, A}, Node} <- MembersToCheckResults, A > 0] of
+                [RunningNode | _] ->
+                    gen_paxos:start_link_copy_state(master, ?MODULE, Group, RunningNode);
+                _                 ->
+                    gen_paxos:start_link_with_subscriber(master, ?MODULE, Group)
+            end;
+       true -> %% single node mode
+            gen_paxos:start_link_with_subscriber(master, ?MODULE, Group)
+    end.
 
 get_routing_table() ->
     Masters = dike_lib:masters(),
@@ -88,7 +102,7 @@ init(State = #state{group_table=GT_List, machine_table=MT_List}, _Options) ->
     MT = ets:new(machine_table, [bag, private, {keypos, 1}]),
     ets:insert(GT, GT_List),
     ets:insert(MT, MT_List),
-    State#state{group_table=GT, machine_table=MT}.
+    {ok, State#state{group_table=GT, machine_table=MT}}.
 
 export_state(State=#state{group_table=GT, machine_table=MT}) ->
     State#state{group_table=ets:tab2list(GT), machine_table=ets:tab2list(MT)}.

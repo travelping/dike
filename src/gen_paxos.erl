@@ -36,7 +36,8 @@
 	 set_and_unlock_log_complete/3,
 	 ping/2,
 	 busy_ping/2,
-	 request_issued_ping/3]).
+	 request_issued_ping/3,
+         get_log_cut/2]).
 
 %% gen_server callbacks
 
@@ -172,6 +173,12 @@ busy_ping(Node, GName) ->
 	    pang;
 	_R ->
 	    pang
+    end.
+
+get_log_cut(Node, GName) ->
+    case catch gen_server:call({get_group_coordinator_name(GName), Node}, get_log_cut, ?PING_TIMEOUT) of
+        {ok, Val} -> {ok, Val};
+        _ -> {error, not_found}
     end.
 
 set_and_unlock_log_complete(Node, GName, NLC) ->
@@ -322,6 +329,9 @@ handle_call(busy_ping, _From, State=#state{log_complete_locked=LCL}) when LCL ==
 
 handle_call(busy_ping, _From, State=#state{log_complete_locked=_LCL}) ->
     {reply, busy, State, ?UPDATE_LC_TIMEOUT};
+
+handle_call(get_log_cut, _From, State=#state{log_cut=LogCut}) ->
+    {reply, {ok, LogCut}, State, ?UPDATE_LC_TIMEOUT};
 
 handle_call(stop, _From, State=#state{subscriber=Sub, group_name=GName}) ->
     gen_server:call(Sub, stop),
@@ -876,7 +886,6 @@ update_and_cut_log(State=#state{members_persisted_at=MPA,
     end.
 
 init_db(GroupName) ->
-
     {ok, DBAdapter} = application:get_env(dike, db_adapter),
     case application:get_env(dike, db_mode) of
 	{ok, V} when V==per_vm ; V==per_machine ->

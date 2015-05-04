@@ -45,6 +45,7 @@ init_per_testcase(TestCase, Config) ->
             AllNodes = ClientNodes ++ [node()],
 
             lager:info("setting masters on ~p to ~p~n", [AllNodes, Masters]),
+            [rpc:call(SlaveNode, application, load, [dike]) || SlaveNode <- AllNodes],
             [rpc:call(Node, application, set_env, [dike, masters, Masters]) || Node <- AllNodes],
             timer:sleep(5000),
             [rpc:call(SlaveNode, dike, start, []) || SlaveNode <- AllNodes],
