@@ -4,7 +4,7 @@
 			      lastchange,
 			      module}).
 
--define(GROUP_SIZE, 5).
+-define(GROUP_SIZE, application:get_env(dike, group_size, 3)).
 
 -define(CHANGE_MEMBER_TAG, '$paxos_coordinator_member_change$x').
 
