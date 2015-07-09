@@ -55,6 +55,7 @@
 
 -record(state, {group_name,
 		index=-1,
+                epoche = 0,
 		position,
 		others = [],
 		calls,
@@ -305,7 +306,7 @@ init([GroupName, GroupMembers, Locked, {DBMod, DBHandler}]) ->
 		group_members=GroupMembers,
 		new_persistence_variance=random:uniform(?PERSISTENCE_VARIANCE * 2),
 		db_adapter={DBMod, DBHandler},
-		members_persisted_at=lists:duplicate(5,0),
+		members_persisted_at=lists:duplicate(length(GroupMembers),0),
 		log_cut=0}}.
 
 handle_call({request_issued_ping, Ref, Pid}, _From, State=#state{group_name=GroupName, db_adapter={DBMod, DBProc}, calls = Calls}) ->
