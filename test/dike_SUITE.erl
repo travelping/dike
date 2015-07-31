@@ -57,7 +57,6 @@ init_per_testcase(TestCase, Config) ->
 
 end_per_testcase(_TestCase, Config) ->
     [rpc:call(SlaveNode, application, stop, [dike]) || SlaveNode <- proplists:get_value(clients, Config) ++ names()],
-    dike_dispatcher:refresh_routing_table(),
     ok.
 
 all(doc) ->

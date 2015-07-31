@@ -115,15 +115,11 @@ handle_call({get_routing_table, Node}, From, State=#state{group_table=GT}) ->
      end,
      State};
 
-%handle_call({add_groups, GList}, From, State) when is_list(GList) ->
-
-
 handle_call({add_group, Gname, PaxosServerModule}, From, State = #state{groups=Groups, group_table=GT}) ->
-    case lists:member(Gname, Groups) of
-	true ->
-	    [RVal=#routing_table_entry{group_name=Gname}] = ets:lookup(GT, Gname),
+    case {lists:member(Gname, Groups), ets:lookup(GT, Gname)} of
+	{true, [RVal=#routing_table_entry{}]} ->
 	    {reply, fun() -> paxos_server:reply(From, RVal) end, State};
-	false ->
+	{MemberP, _} ->
 	    add_group_int(State, Gname, PaxosServerModule),
 	    [RVal=#routing_table_entry{group_name=Gname, nodes=Nodes}] = ets:lookup(GT, Gname),
 	    RFun = fun() ->
@@ -131,7 +127,8 @@ handle_call({add_group, Gname, PaxosServerModule}, From, State = #state{groups=G
 			   [ok = dike_dispatcher:new_group(Node, Gname, PaxosServerModule, Nodes) || Node <- Nodes],
 			   paxos_server:reply(From, RVal)
 		   end,
-	    {reply, RFun, State#state{groups=[Gname | Groups]}}
+            NewGroups = if MemberP -> Groups; true -> [Gname | Groups] end,
+	    {reply, RFun, State#state{groups=NewGroups}}
     end;
 
 handle_call({join, Node}, From, State = #state{nodes=Nodes}) ->
@@ -204,14 +201,16 @@ add_group_int(State, _GroupName, _ModuleName, 0) ->
 
 add_group_int(State=#state{machine_table=MT, group_table=GT}, GroupName, ModuleName, N) ->
     Node = find_node_with_least_groups(State, GroupName),
-    ets:insert(MT, {Node, GroupName}),
     case ets:lookup(GT, GroupName) of
 	[] ->
+            ets:insert(MT, {Node, GroupName}),
 	    ets:insert(GT, #routing_table_entry{module=ModuleName, group_name=GroupName, nodes=[Node]});
 	[E=#routing_table_entry{module=ModuleName, group_name=GroupName, nodes=NodeList}] ->
-	    if length(NodeList) < ?GROUP_SIZE ->
+	    case (length(NodeList) < ?GROUP_SIZE) and not lists:member(Node, NodeList) of
+                true ->
+                    ets:insert(MT, {Node, GroupName}),
 		    ets:insert(GT, E#routing_table_entry{nodes=[Node | NodeList]});
-	       true ->
+                _ ->
 		    lager:debug([{class, dike}], "in dike_Master, trying to add a Node to a group that is already full!", [])
 	    end
     end,

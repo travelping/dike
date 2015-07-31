@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.3.0 - 03 Aug 2015
+---------------------------
+
+* fix an error in dike_master:add_group which could occur when a group was added but no entries in the group_table where made
+
 Version 1.3.0 - 25 Mar 2015
 ---------------------------
 
