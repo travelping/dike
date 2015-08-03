@@ -46,7 +46,7 @@ init([Masters]) ->
 		     1 ->
 			 {dike_dispatcher, {dike_stub_dispatcher, start_link, [hd(Masters)]},
 			  Restart, Shutdown, Type, [dike_stub_dispatcher]};
-		     5 ->
+		     N when N == 3 orelse N == 5 ->
 			 {dike_dispatcher, {dike_dispatcher, start_link, [Masters]},
 			  Restart, Shutdown, Type, [dike_dispatcher]}
 		 end,
