@@ -15,7 +15,7 @@ defmodule Dike.Mixfile do
   end
 
   defp deps(_) do
-    [{:lager, "~> 2.1.0", override: true},
+    [{:lager, "~> 2.1.0"},
      {:regine, github: "travelping/regine"},
      {:mix_erlang_tasks, "0.1.0"}]
   end
