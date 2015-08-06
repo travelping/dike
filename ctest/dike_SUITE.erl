@@ -43,10 +43,12 @@ init_per_testcase(TestCase, Config) ->
             Masters = proplists:get_value(nodes, Config),
             ClientNodes =  Masters ++ Clients,
             AllNodes = ClientNodes ++ [node()],
-
             lager:info("setting masters on ~p to ~p~n", [AllNodes, Masters]),
             [rpc:call(SlaveNode, application, load, [dike]) || SlaveNode <- AllNodes],
+
             [rpc:call(Node, application, set_env, [dike, masters, Masters]) || Node <- AllNodes],
+            DikeEnv = application:get_all_env(dike),
+            [[rpc:call(Node, application, set_env, [dike, Key, Value]) || {Key, Value} <- DikeEnv] || Node <- AllNodes],
             timer:sleep(5000),
             [rpc:call(SlaveNode, dike, start, []) || SlaveNode <- AllNodes],
             lager:info("started dike~n", []),
