@@ -1,5 +1,4 @@
 %{"goldrush": {:hex, :goldrush, "0.1.6"},
   "lager": {:hex, :lager, "2.1.1"},
   "mix_erlang_tasks": {:hex, :mix_erlang_tasks, "0.1.0"},
-  "mix_eunit": {:hex, :mix_eunit, "0.1.2"},
   "regine": {:git, "git://github.com/travelping/regine.git", "ce13c3767c7b5ddfa4ed0c631a50fa728c2502ff", []}}
