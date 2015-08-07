@@ -3,11 +3,12 @@ dike
 
 A framework for distributed computing and storage.
 
-Version 1.3.0 - 03 Aug 2015
+Version 1.4.0 - 03 Aug 2015
 ---------------------------
 
 * dike can be started as 3-node-cluster, configure through {group_size, 3} env setting
 * fix an error in dike_master:add_group which could occur when a group was added but no entries in the group_table where made
+* build and test with mix
 
 Version 1.3.0 - 25 Mar 2015
 ---------------------------

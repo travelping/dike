@@ -5,21 +5,43 @@ Dike is a framework based on paxos for implementing a distributed, data-oriented
 
 ## Installation
 
-For building Dike at least the following erlang applications and their dependencies are required:
+### with rebar
 
-* lager
-* regine
-* tetrapak
+required: git, rebar
 
-Compilation of dike:
+```bash
+$ git clone https://github.com/travelping/dike.git
+$ cd dike
+$ rebar get-deps
+$ rebar compile
+```
 
-    rebar get-deps && rebar compile
+### with mix
+
+required: git, elixir, mix
+
+```bash
+$ git clone https://github.com/travelping/dike.git
+$ cd dike
+$ mix deps.get
+$ mix compile
+```
 
 ## Unit-tests
 
-For running common tests, you need [tetrapak](https://github.com/travelping/tetrapak)
+### with tetrapak
 
-    tetrapak test
+required: [tetrapak](https://github.com/travelping/tetrapak)
+
+```bash
+$ tetrapak test
+```
+
+### with mix
+
+```bash
+$ mix ct
+```
 
 ## Using dike
 

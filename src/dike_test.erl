@@ -80,15 +80,7 @@ nodes_start(NodeNames) ->
 add_test_code_path(SlaveNodes) ->
     lager:info("adding code pathes"),
     {ok, Cwd} = file:get_cwd(),
-    ProjectPath = filename:dirname(filename:dirname(Cwd)),
-    TestCodeDir = filename:join([ProjectPath,  "test"]),
-    Dirs = [TestCodeDir, ProjectPath, filename:join([ProjectPath, "ebin"])],
-    case filelib:is_dir(TestCodeDir) of
-        true ->
-            [{_, []} = rpc:multicall(SlaveNodes, code, add_patha, [Dir]) || Dir <- Dirs];
-        false ->
-            lager:error("not a directory ~p", [TestCodeDir])
-    end.
+    rpc:multicall(SlaveNodes, code, set_path, [code:get_path()]).
 
 node_names(App, N) ->
     [list_to_atom(App ++ integer_to_list(I)) || I <- lists:seq(1, N)].

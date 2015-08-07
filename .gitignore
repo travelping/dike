@@ -7,5 +7,6 @@
 *.app
 /logs/
 /deps/
+/_build/
 test-log
 .*
