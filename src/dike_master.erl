@@ -28,6 +28,9 @@
 		nodes=[],
 		master_nodes=[]}).
 
+-define(Group_Table_Options,   [ordered_set, private, {keypos, 2}]).
+-define(Machine_Table_Options, [bag, private, {keypos, 1}]).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% API
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -87,8 +90,8 @@ stop(Gname) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init(_Options) ->
-    GT = ets:new(group_table, [ordered_set, private, {keypos, 2}]),
-    MT = ets:new(machine_table, [bag, private, {keypos, 1}]),
+    GT = ets:new(group_table, ?Group_Table_Options),
+    MT = ets:new(machine_table, ?Machine_Table_Options),
     {ok, MasterNodes} = application:get_env(dike, masters),
     lager:debug([{class, dike}], "master starting on node ~p", [node()]),
     {ok, #state{group_table=GT,
@@ -98,8 +101,8 @@ init(_Options) ->
 		master_nodes=MasterNodes}}.
 
 init(State = #state{group_table=GT_List, machine_table=MT_List}, _Options) ->
-    GT = ets:new(group_table, [ordered_set, private, {keypos, 1}]),
-    MT = ets:new(machine_table, [bag, private, {keypos, 1}]),
+    GT = ets:new(group_table, ?Group_Table_Options),
+    MT = ets:new(machine_table, ?Machine_Table_Options),
     ets:insert(GT, GT_List),
     ets:insert(MT, MT_List),
     {ok, State#state{group_table=GT, machine_table=MT}}.
