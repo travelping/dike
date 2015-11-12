@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.4.1 - 12 Nov 2015
+---------------------------
+
+* fix dike master startup from serialized state (recovery or delayed startup)
+
 Version 1.4.0 - 03 Aug 2015
 ---------------------------
 
