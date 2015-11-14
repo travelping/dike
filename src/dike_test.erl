@@ -1,7 +1,8 @@
 -module(dike_test).
 -export([nodes_dike_init/2, nodes_dike_init/3, nodes_slave_init/2, nodes_slave_init/3,
          local_init/0, local_init/1, start_lager/1, start_lager/2, stop_nodes/1,
-         init_self/1, nodes_set_dike_masters/1, apply_conf/1, apply_conf/2, config_lager/2]).
+         init_self/1, nodes_set_dike_masters/1, apply_conf/1, apply_conf/2, config_lager/2,
+         copy_local_conf/1]).
 -define(LOG_LEVEL, debug).
 -define(LOG_FILE, "/log/console.log").
 -compile([{parse_transform, lager_transform}]).
@@ -37,6 +38,10 @@ nodes_set_dike_masters(Nodes) ->
 stop_nodes(Nodes) ->
     [{ok, _} = ct_slave:stop(Host, Node) || {Node, Host} <- [split_hostname(FullName) || FullName <- Nodes]],
     ok = net_kernel:stop().
+
+copy_local_conf(AllNodes) ->
+    DikeEnv = application:get_all_env(dike),
+    [[rpc:call(Node, application, set_env, [dike, Key, Value]) || {Key, Value} <- DikeEnv] || Node <- AllNodes].
 
 apply_conf(Terms) ->
     apply_conf(node(), Terms).
