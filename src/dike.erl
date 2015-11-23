@@ -53,7 +53,15 @@ start(_Type, _Args) ->
     	    ok
     end,
 
-    {ok, Masters} = application:get_env(dike, masters),
+    % start dike on current node in single mode if it extra configured with masters = []
+    Masters = case application:get_env(dike, masters) of
+        {ok, []} ->
+            CurrentNode = node(),
+            application:set_env(dike, masters, [CurrentNode]),
+            [CurrentNode];
+        {ok, CurrentMasters} ->
+            CurrentMasters
+    end,
     paxos_registry:start(),
 
     case dike_lib:position(Masters, node()) of
