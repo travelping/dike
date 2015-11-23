@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.4.2 - 23 Nov 2015
+---------------------------
+
+* add more simple configuration option for single node ( masters = [] )
+
 Version 1.4.1 - 12 Nov 2015
 ---------------------------
 
