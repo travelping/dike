@@ -3,6 +3,11 @@ dike
 
 A framework for distributed computing and storage.
 
+Version 1.4.3 - 22 Jan 2016
+---------------------------
+
+* update dependencies for Erlang 18
+
 Version 1.4.2 - 23 Nov 2015
 ---------------------------
 
